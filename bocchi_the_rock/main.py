@@ -10,7 +10,6 @@ from crawler import DCInsideCrawler
 from image_handler import ImageHandler
 from message_sender import MessageSender
 
-
 class DCBot(discord.Client):
     def __init__(self):
         super().__init__(intents=get_discord_intents())
@@ -49,11 +48,9 @@ class DCBot(discord.Client):
             # 텔레그램에 전송
             await self.message_sender.send_to_telegram(img_path, file_hash)
 
-
 def main():
     client = DCBot()
     client.run(TOKEN)
-
 
 if __name__ == "__main__":
     main()

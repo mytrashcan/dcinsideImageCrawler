@@ -24,7 +24,6 @@ processes = {}  # 실행된 프로세스 저장 {폴더: (프로세스, 시작�
 MAX_PROCESSES = 6  # 동시 실행할 최대 프로세스 개수
 MAX_PROCESS_LIFETIME = 3600  # 1시간마다 실행 교체
 
-
 def is_already_running(folder):
     """해당 폴더의 main.py가 이미 실행 중인지 확인"""
     for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
@@ -36,7 +35,6 @@ def is_already_running(folder):
             continue
     return False
 
-
 def run_script(folder):
     """각 폴더의 main.py 실행 (중복 실행 방지)"""
     if is_already_running(folder):
@@ -46,7 +44,6 @@ def run_script(folder):
     process = subprocess.Popen(['python', f'{folder}/main.py'])
     processes[folder] = (process, time.time())  # 실행된 프로세스를 저장
     print(f"✅ {folder}/main.py 실행됨 (PID: {process.pid})")
-
 
 def stop_running_processes():
     """현재 실행 중인 6개 프로세스를 종료"""
@@ -59,7 +56,6 @@ def stop_running_processes():
 
     # 실행된 프로세스 딕셔너리 초기화
     processes.clear()
-
 
 def manage_crawlers():
     """크롤링 프로세스를 자동으로 관리 (순환 실행)"""
@@ -78,7 +74,6 @@ def manage_crawlers():
                 time.sleep(5)  # 실행 간격 조정
 
         time.sleep(MAX_PROCESS_LIFETIME)  # 1시간마다 실행
-
 
 class ControlBot(discord.Client):
     def __init__(self):
@@ -112,7 +107,6 @@ class ControlBot(discord.Client):
 
             await message.channel.send(embed=embed, file=file)
 
-
 def clear_image_folder(folder):
     """상위 폴더의 Image 폴더 내부 파일 삭제 (폴더 자체는 유지)"""
     if not os.path.exists(folder):
@@ -126,7 +120,6 @@ def clear_image_folder(folder):
             print(f"✅ 삭제 완료: {file_path}")
         except PermissionError:
             print(f"❌ 삭제 실패 (권한 문제): {file_path}")
-
 
 if __name__ == "__main__":
     # 크롤러 관리 프로세스를 별도 실행 (자동 실행)
