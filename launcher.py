@@ -49,7 +49,7 @@ def run_script(folder):
 
 
 def stop_running_processes():
-    """현재 실행 중인 4개 프로세스를 종료"""
+    """현재 실행 중인 6개 프로세스를 종료"""
     global processes
 
     for folder, (process, start_time) in list(processes.items()):
@@ -69,7 +69,7 @@ def manage_crawlers():
         # 현재 실행 중인 프로세스 종료
         stop_running_processes()
 
-        # 새로운 4개 실행
+        # 새로운 6개 실행
         for _ in range(MAX_PROCESSES):
             if folder_queue:
                 folder = folder_queue.popleft()  # 🔥 큐에서 폴더 꺼내 실행
@@ -94,7 +94,6 @@ class ControlBot(discord.Client):
             return
 
         if message.content == "쓰담쓰담":
-            await message.channel.send("🧹 Image 폴더의 모든 파일을 삭제할게요!♡")
             clear_image_folder("Image")
 
             image_path = "gaki.png"

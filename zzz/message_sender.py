@@ -13,6 +13,7 @@ class MessageSender:
         try:
             embed = discord.Embed(
                 title=title,
+                description=f"hash: {file_hash}",
                 color=0xFF5733
             )
             embed.set_image(url=f"attachment://{os.path.basename(img_path)}")
