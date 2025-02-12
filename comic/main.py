@@ -3,13 +3,14 @@ import asyncio
 import random
 import discord
 from Module.config import (
-    TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, BASE_URL, get_discord_intents
+    TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, get_discord_intents
 )
 from Module.crawler import DCInsideCrawler
 from Module.image_handler import ImageHandler
 from Module.message_sender import MessageSender
 
-CHANNEL_IDS = ['1337415871387144232', '1337336259605037096']  # 여러 채널 ID를 리스트로 설정
+CHANNEL_IDS = ['1337412972594860082', '1337336259605037096']  # 여러 채널 ID를 리스트로 설정
+BASE_URL = "https://gall.dcinside.com/board/lists/?id=comic_new4"
 
 class DCBot(discord.Client):
     def __init__(self):

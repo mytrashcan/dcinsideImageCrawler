@@ -38,5 +38,8 @@ def get_discord_intents():
     intents.message_content = True
     return intents
 
+#채널 설정
+#CHANNEL_IDS = ['1337415871387144232', '1337336259605037096']  # 여러 채널 ID를 리스트로 설정
+
 # 기본 URL 설정
-BASE_URL = "https://gall.dcinside.com/mgallery/board/lists?id=bang_dream"
+#BASE_URL = "https://gall.dcinside.com/mgallery/board/lists?id=bang_dream"
