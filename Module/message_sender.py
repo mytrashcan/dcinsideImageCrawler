@@ -1,4 +1,3 @@
-# message_sender.py
 import os
 import discord
 from telegram import Bot, InputFile

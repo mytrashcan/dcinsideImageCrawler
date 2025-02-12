@@ -6,9 +6,9 @@ from config import (
     TOKEN, CHANNEL_IDS, TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID, BASE_URL, get_discord_intents
 )
-from crawler import DCInsideCrawler
-from image_handler import ImageHandler
-from message_sender import MessageSender
+from Module.crawler import DCInsideCrawler
+from Module.image_handler import ImageHandler
+from Module.message_sender import MessageSender
 
 class DCBot(discord.Client):
     def __init__(self):
