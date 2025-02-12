@@ -1,6 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
-from config import HEADERS
+from Module.config import HEADERS # 같은 폴더 내에 있는데 전체경로 사용해야함... 왜??
 
 class DCInsideCrawler:
     def __init__(self, base_url):

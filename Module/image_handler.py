@@ -3,7 +3,7 @@ from os.path import getsize
 import hashlib
 import requests
 from bs4 import BeautifulSoup
-from config import HEADERS
+from Module.config import HEADERS
 
 class ImageHandler:
     def __init__(self):
