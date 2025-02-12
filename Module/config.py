@@ -3,24 +3,13 @@ import os
 import discord
 from dotenv import load_dotenv
 
-# 현재 파일(config.py)의 디렉토리에서 상위로 이동 후 Module/.env 경로 지정
-current_dir = os.path.dirname(os.path.abspath(__file__))  # 하위 폴더
-parent_dir = os.path.dirname(current_dir)  # 상위 폴더
-env_path = os.path.join(parent_dir, 'Module', '.env')  # Module/.env 경로
-
-# .env 파일 존재 확인 및 로드
-if not os.path.exists(env_path):
-    raise FileNotFoundError(f".env 파일을 찾을 수 없습니다: {env_path}")
-
-load_dotenv(env_path)
-
+load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL")
 
 # 디스코드 봇 Token 과 채널 ID
 TOKEN = DISCORD_TOKEN
-CHANNEL_IDS = ['1337415871387144232', '1337336259605037096']  # 여러 채널 ID를 리스트로 설정
 
 # 텔레그램 봇 Token과 채팅 ID
 TELEGRAM_BOT_TOKEN = TELEGRAM_TOKEN
