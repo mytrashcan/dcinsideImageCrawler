@@ -9,8 +9,6 @@ from collections import deque  # 🔥 순환 실행을 위한 큐
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join("Module", ".env"))
-
-
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
 folders = [
