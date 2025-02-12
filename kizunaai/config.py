@@ -3,10 +3,10 @@ import os
 import discord
 from dotenv import load_dotenv
 
-# 현재 파일(config.py)의 디렉토리에서 상위로 이동 후 common/.env 경로 지정
+# 현재 파일(config.py)의 디렉토리에서 상위로 이동 후 Module/.env 경로 지정
 current_dir = os.path.dirname(os.path.abspath(__file__))  # 하위 폴더
 parent_dir = os.path.dirname(current_dir)  # 상위 폴더
-env_path = os.path.join(parent_dir, 'common', '.env')  # common/.env 경로
+env_path = os.path.join(parent_dir, 'Module', '.env')  # Module/.env 경로
 
 # .env 파일 존재 확인 및 로드
 if not os.path.exists(env_path):
@@ -20,7 +20,7 @@ TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL")
 
 # 디스코드 봇 Token 과 채널 ID
 TOKEN = DISCORD_TOKEN
-CHANNEL_IDS = ['1337375996583874636', '1337336259605037096']  # 여러 채널 ID를 리스트로 설정
+CHANNEL_IDS = ['1337415871387144232', '1337336259605037096']  # 여러 채널 ID를 리스트로 설정
 
 # 텔레그램 봇 Token과 채팅 ID
 TELEGRAM_BOT_TOKEN = TELEGRAM_TOKEN
@@ -50,4 +50,4 @@ def get_discord_intents():
     return intents
 
 # 기본 URL 설정
-BASE_URL = "https://gall.dcinside.com/mgallery/board/lists/?id=kizunaai"
+BASE_URL = "https://gall.dcinside.com/mgallery/board/lists?id=bang_dream"

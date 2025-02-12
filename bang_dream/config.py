@@ -3,10 +3,10 @@ import os
 import discord
 from dotenv import load_dotenv
 
-# 현재 파일(config.py)의 디렉토리에서 상위로 이동 후 common/.env 경로 지정
+# 현재 파일(config.py)의 디렉토리에서 상위로 이동 후 Module/.env 경로 지정
 current_dir = os.path.dirname(os.path.abspath(__file__))  # 하위 폴더
 parent_dir = os.path.dirname(current_dir)  # 상위 폴더
-env_path = os.path.join(parent_dir, 'common', '.env')  # common/.env 경로
+env_path = os.path.join(parent_dir, 'Module', '.env')  # Module/.env 경로
 
 # .env 파일 존재 확인 및 로드
 if not os.path.exists(env_path):
