@@ -4,16 +4,9 @@ import discord
 from dotenv import load_dotenv
 
 load_dotenv()
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL")
-
-# 디스코드 봇 Token 과 채널 ID
-TOKEN = DISCORD_TOKEN
-
-# 텔레그램 봇 Token과 채팅 ID
-TELEGRAM_BOT_TOKEN = TELEGRAM_TOKEN
-TELEGRAM_CHAT_ID = TELEGRAM_CHANNEL_ID
+TOKEN = os.getenv("DISCORD_TOKEN")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHANNEL")
 
 # 헤더 설정
 HEADERS = {
