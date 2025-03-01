@@ -1,13 +1,20 @@
 # main.py
+import os
+import sys
 import asyncio
-import random
+
+# Third-party libraries
 import discord
-from Module.config import (
-    TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, get_discord_intents
-)
+
+# 프로젝트 환경 설정
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+# Local modules
+from Module.config import TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, get_discord_intents
 from Module.crawler import DCInsideCrawler
 from Module.image_handler import ImageHandler
 from Module.message_sender import MessageSender
+
 
 CHANNEL_IDS = ['1337403396185129041', '1337336259605037096']  # 여러 채널 ID를 리스트로 설정
 BASE_URL = "https://gall.dcinside.com/mgallery/board/lists/?id=projectmx"

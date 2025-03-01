@@ -12,8 +12,8 @@ load_dotenv(os.path.join("Module", ".env"))
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
 folders = [
-    "bang_dream", "bocchi_the_rock", "comic", "fubuki",
-    "gov", "idolmaster", "kizunaai", "projectmx",
+    "projectmx", "bocchi_the_rock", "comic", "fubuki",
+    "gov", "idolmaster", "kizunaai", "bang_dream",
     "purikone_redive", "stariload", "stellive", "wuthering",
     "zzz"
 ]
