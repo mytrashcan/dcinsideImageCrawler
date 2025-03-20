@@ -2,6 +2,7 @@
 import os
 import sys
 import asyncio
+import random
 
 # Third-party libraries
 import discord
@@ -15,7 +16,7 @@ from Module.crawler import DCInsideCrawler
 from Module.image_handler import ImageHandler
 from Module.message_sender import MessageSender
 
-CHANNEL_IDS = ['1337359586381922336', '1337336259605037096']  # 여러 채널 ID를 리스트로 설정
+CHANNEL_IDS = ['1352280646692765746']  # 여러 채널 ID를 리스트로 설정
 BASE_URL = "https://gall.dcinside.com/board/lists/?id=idolmaster_new1"
 
 class DCBot(discord.Client):
