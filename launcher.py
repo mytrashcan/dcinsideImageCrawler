@@ -13,9 +13,8 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
 folders = [
     "projectmx", "bocchi_the_rock", "comic", "fubuki",
-    "gov", "idolmaster", "kizunaai", "bang_dream",
-    "purikone_redive", "stariload", "stellive", "wuthering",
-    "zzz"
+    "idolmaster", "kizunaai", "bang_dream", "stariload",
+    "stellive", "wuthering", "zzz"
 ]
 
 folder_queue = deque(folders)  # 🔥 순환 실행을 위한 큐
