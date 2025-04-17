@@ -12,27 +12,29 @@ class DCInsideCrawler:
         """이미지 포함 여부 체크"""
         return "icon_pic" in str(element)
 
-    def finder(self):
-        """크롤링 시작지점 위치 찾기"""
-        try:
-            res = requests.get(self.base_url, headers=HEADERS)
-            res.raise_for_status()  # 상태 코드 확인
-            soup = BeautifulSoup(res.text, 'html.parser')
+    """
+        def finder(self):
+            # 크롤링 시작지점 위치 찾기
+            try:
+                res = requests.get(self.base_url, headers=HEADERS)
+                res.raise_for_status()  # 상태 코드 확인
+                soup = BeautifulSoup(res.text, 'html.parser')
 
-            if "mgallery" in self.base_url or "mini" in self.base_url:
-                pointer = soup.select("td.gall_subject")
-            else:
-                pointer = soup.select("td.gall_num")
+                if "mgallery" in self.base_url or "mini" in self.base_url:
+                    pointer = soup.select("td.gall_subject")
+                else:
+                    pointer = soup.select("td.gall_num")
 
-            startpoint = 0
-            for item in pointer:
-                if any(x in item.text for x in ["공지", "설문", "이슈", "고정"]):
-                    startpoint += 1
+                startpoint = 0
+                for item in pointer:
+                    if any(x in item.text for x in ["공지", "설문", "이슈", "고정"]):
+                        startpoint += 1
 
-            return startpoint
+                return startpoint
 
-        except Exception as e:
-            return None
+            except Exception as e:
+                return None
+    """
 
     async def get_latest_post(self):
         """최신 게시글 정보 가져오기"""
@@ -41,13 +43,13 @@ class DCInsideCrawler:
             res.raise_for_status()
             soup = BeautifulSoup(res.text, 'html.parser')
 
-            startpoint = self.finder()
+            # startpoint = self.finder()
             posts = soup.select("tr.ub-content")
-            
+
             if not posts:
                 return None
 
-            for post in posts[startpoint:]:
+            for post in posts[15:]:
                 try:
                     title_element = post.select_one("td.gall_tit > a:first-child")
                     if not title_element:
