@@ -1,4 +1,5 @@
 import requests
+import sys
 from bs4 import BeautifulSoup
 from Module.config import HEADERS # 같은 폴더 내에 있는데 전체경로 사용해야함... 왜??
 
@@ -74,4 +75,5 @@ class DCInsideCrawler:
             return None
 
         except Exception as e:
+            print(f"Error at Line {sys.exc_info()[-1].tb_lineno}: {e}")
             return None
