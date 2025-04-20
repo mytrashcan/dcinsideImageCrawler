@@ -16,7 +16,6 @@ from Module.crawler import DCInsideCrawler
 from Module.image_handler import ImageHandler
 from Module.message_sender import MessageSender
 
-
 CHANNEL_IDS = ['1352992953383125114', '1337336259605037096']  # 여러 채널 ID를 리스트로 설정
 BASE_URL = "https://gall.dcinside.com/mgallery/board/lists/?id=projectmx"
 
@@ -38,7 +37,7 @@ class DCBot(discord.Client):
                 if post and post['has_image']:
                     await self.process_post(post)
             except Exception as e:
-                return None
+                print(f"Error during crawling: {e}")
             delay = random.uniform(20, 40)
             await asyncio.sleep(delay)
 
@@ -58,9 +57,10 @@ class DCBot(discord.Client):
             # 텔레그램에 전송
             await self.message_sender.send_to_telegram(img_path, file_hash)
 
-def main():
+async def main():
     client = DCBot()
-    client.run(TOKEN)
+    async with client:
+        await client.start(TOKEN)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

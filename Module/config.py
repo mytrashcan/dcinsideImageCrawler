@@ -8,6 +8,7 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHANNEL")
 
+
 # 헤더 설정
 HEADERS = {
     "Connection": "keep-alive",
