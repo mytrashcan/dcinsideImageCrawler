@@ -1,66 +1,21 @@
-# main.py
-import os
-import sys
 import asyncio
-import random
-
-# Third-party libraries
-import discord
-
-# 프로젝트 환경 설정
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
-# Local modules
+from Module.dcbot import DCBot
 from Module.config import TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, get_discord_intents
-from Module.crawler import DCInsideCrawler
-from Module.image_handler import ImageHandler
-from Module.message_sender import MessageSender
 
 CHANNEL_IDS = ['1352992953383125114', '1337336259605037096']  # 여러 채널 ID를 리스트로 설정
 BASE_URL = "https://gall.dcinside.com/mgallery/board/lists/?id=projectmx"
 
-class DCBot(discord.Client):
-    def __init__(self):
-        super().__init__(intents=get_discord_intents())
-        self.crawler = DCInsideCrawler(BASE_URL)
-        self.image_handler = ImageHandler()
-        self.message_sender = MessageSender(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
-
-    async def on_ready(self):
-        print(f'Logged in as {self.user}')
-        await self.start_crawling()
-
-    async def start_crawling(self):
-        while True:
-            try:
-                post = await self.crawler.get_latest_post()
-                if post and post['has_image']:
-                    await self.process_post(post)
-            except Exception as e:
-                print(f"Error during crawling: {e}")
-            delay = random.uniform(20, 40)
-            await asyncio.sleep(delay)
-
-    async def process_post(self, post):
-        img_path = self.image_handler.download_image(post['link'])
-        if img_path:
-            file_hash = self.image_handler.calculate_hash(img_path)
-
-            # 디스코드 채널들에 전송
-            for channel_id in CHANNEL_IDS:
-                channel = self.get_channel(int(channel_id))
-                if channel:
-                    await self.message_sender.send_to_discord(
-                        channel, post['title'], img_path, file_hash
-                    )
-
-            # 텔레그램에 전송
-            await self.message_sender.send_to_telegram(img_path, file_hash)
-
 async def main():
-    client = DCBot()
-    async with client:
-        await client.start(TOKEN)
+    intents = get_discord_intents()
+    bot = DCBot(
+        token=TOKEN,
+        base_url=BASE_URL,
+        channel_ids=CHANNEL_IDS,
+        telegram_token=TELEGRAM_BOT_TOKEN,
+        telegram_chat_id=TELEGRAM_CHAT_ID,
+        intents=intents,
+    )
+    await bot.run_bot()
 
 if __name__ == "__main__":
     asyncio.run(main())
