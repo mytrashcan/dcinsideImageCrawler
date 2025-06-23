@@ -7,12 +7,12 @@ class MessageSender:
         self.telegram_bot = Bot(token=telegram_bot_token)
         self.telegram_chat_id = telegram_chat_id
 
-    async def send_to_discord(self, channel, title, img_path, file_hash):
+    async def send_to_discord(self, channel, title, img_path):
         """디스코드로 이미지 전송"""
         try:
             embed = discord.Embed(
                 title=title,
-                description=f"hash: {file_hash}",
+                #description=f"hash: {file_hash}",
                 color=0xFF5733
             )
             embed.set_image(url=f"attachment://{os.path.basename(img_path)}")
@@ -25,7 +25,7 @@ class MessageSender:
         except Exception as e:
             return None
 
-    async def send_to_telegram(self, image_path, file_hash):
+    async def send_to_telegram(self, image_path):
         """텔레그램으로 이미지 전송"""
         try:
             with open(image_path, 'rb') as img_file:

@@ -59,9 +59,8 @@ class ImageHandler:
             
         except Exception as e:
             return None
-
+"""
     def calculate_hash(self, file_path):
-        """파일 해시값 계산"""
         try:
             sha256_hash = hashlib.sha256()
             with open(file_path, "rb") as f:
@@ -70,3 +69,4 @@ class ImageHandler:
             return sha256_hash.hexdigest()
         except Exception as e:
             return None
+"""

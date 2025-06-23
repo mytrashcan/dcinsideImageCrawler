@@ -34,18 +34,18 @@ class DCBot(discord.Client):
     async def process_post(self, post):
         img_path = self.image_handler.download_image(post['link'])
         if img_path:
-            file_hash = self.image_handler.calculate_hash(img_path)
+            #file_hash = self.image_handler.calculate_hash(img_path)
 
             # 디스코드 채널들에 전송
             for channel_id in self.channel_ids:
                 channel = self.get_channel(int(channel_id))
                 if channel:
                     await self.message_sender.send_to_discord(
-                        channel, post['title'], img_path, file_hash
+                        channel, post['title'], img_path
                     )
 
             # 텔레그램에 전송
-            await self.message_sender.send_to_telegram(img_path, file_hash)
+            await self.message_sender.send_to_telegram(img_path)
 
     async def on_message(self, message):
         # 봇 자신이 보낸 메시지는 무시
