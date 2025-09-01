@@ -60,7 +60,7 @@ The script manages and runs multiple crawling processes that fetch images from D
   
 ## Running the Script
 
-1. Script Overview: The script continuously manages processes that run a script (```launcher.py```) from multiple folders. If a script is already running for a folder, it will skip that folder.
+1. Script Overview: The script continuously manages processes that run a script (```main.py```) from multiple folders. If a script is already running for a folder, it will skip that folder.
 2. Run the script:
    To run the main process management system, simply execute the following command:
    ```bash
@@ -69,7 +69,7 @@ The script manages and runs multiple crawling processes that fetch images from D
 3. Example Usage:
 The script will automatically:
 - Check if any process for a folder is already running.
-- Run the ```launcher.py``` script for folders in a circular queue (up to ```MAX_PROCESSES```).
+- Run the ```main.py``` script for folders in a circular queue (up to ```MAX_PROCESSES```).
 - Terminate any running processes after the set lifetime (```MAX_PROCESS_LIFETIME```).
 
 4. Execution Flow:
