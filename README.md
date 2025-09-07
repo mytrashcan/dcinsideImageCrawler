@@ -13,7 +13,7 @@
 
 ### Prerequisites
 
-Before setting up DCImg, ensure you have the following installed on your machine or server:
+Before setting up dcinsideImageCrawler, ensure you have the following installed on your machine or server:
 
 - Python 3.x
 - **Discord Bot Token** (for Discord bot integration)
@@ -24,12 +24,12 @@ Before setting up DCImg, ensure you have the following installed on your machine
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/mytrashcan/dcimg.git
+   git clone https://github.com/mytrashcan/dcinsideImageCrawler.git
    ```
    
 2. Navigate to the project directory:
    ```bash
-   cd dcimg
+   cd dcinsideImageCrawler
    ```
 
 3. Install the required dependencies:
