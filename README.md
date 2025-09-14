@@ -77,5 +77,8 @@ The script will automatically:
 - If a folder's script is not running, it starts a new process for it.
 - Processes are stopped after ```MAX_PROCESS_LIFETIME``` seconds, and the queue restarts.
 
+## TroubleShooting
+- 
+
 ## License
 This project is licensed under the GPL License
