@@ -80,5 +80,8 @@ The script will automatically:
 ## TroubleShooting
 - 
 
+## to-do
+- send image via in-memory buffering
+- 
 ## License
 This project is licensed under the GPL License
