@@ -2,8 +2,8 @@ import asyncio
 from Module.dcbot import DCBot
 from Module.config import TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, get_discord_intents
 
-CHANNEL_IDS = ['1352993534747086949', '1370703789492928513']  # 여러 채널 ID를 리스트로 설정
-BASE_URL = "https://gall.dcinside.com/board/lists/?id=comic_new6"
+CHANNEL_IDS = ['1352992953383125114', '1370703789492928513']  # 여러 채널 ID를 리스트로 설정
+BASE_URL = "https://gall.dcinside.com/mgallery/board/lists?id=onshinproject"
 
 async def main():
     intents = get_discord_intents()

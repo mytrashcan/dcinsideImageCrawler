@@ -10,8 +10,8 @@ env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "Module", ".e
 load_dotenv(env_path)
 
 folders = [
-    "projectmx", "bang_dream", "idolmaster", "kizunaai", "comic",
-    "bocchi_the_rock", "staraiload", "wuthering", "stellive", "zzz"
+    "stariload", "wuthering", "onshinproject", "projectmx", "zzz",
+    "stellive", "kizunaai", "comic",
 ]
 
 folder_queue = deque(folders)  # 🔥 순환 실행을 위한 큐
