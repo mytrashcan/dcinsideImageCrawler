@@ -6,6 +6,7 @@ from Module.crawler import DCInsideCrawler
 from Module.image_handler import ImageHandler
 from Module.message_sender import MessageSender
 
+
 class DCBot(discord.Client):
     def __init__(self, token, base_url, channel_ids, telegram_token, telegram_chat_id, intents):
         super().__init__(intents=intents)
@@ -32,55 +33,46 @@ class DCBot(discord.Client):
             await asyncio.sleep(delay)
 
     async def process_post(self, post):
-        img_path = self.image_handler.download_image(post['link'])
-        if img_path:
-            #file_hash = self.image_handler.calculate_hash(img_path)
+        # 여러 이미지 처리
+        images = self.image_handler.download_images(post['link'])
+        if not images:
+            return
+
+        for i, (discord_buffer, telegram_buffer, filename, is_gif) in enumerate(images):
+            # 첫 번째 이미지에만 제목 표시
+            title = post['title'] if i == 0 else ""
 
             # 디스코드 채널들에 전송
             for channel_id in self.channel_ids:
                 channel = self.get_channel(int(channel_id))
                 if channel:
                     await self.message_sender.send_to_discord(
-                        channel, post['title'], img_path
+                        channel, title, discord_buffer, filename
                     )
+                    discord_buffer.seek(0)  # 다음 채널을 위해 리셋
 
             # 텔레그램에 전송
-            await self.message_sender.send_to_telegram(img_path)
+            await self.message_sender.send_to_telegram(telegram_buffer, filename, is_gif)
+
+            # 이미지 간 약간의 딜레이 (API 제한 방지)
+            if len(images) > 1:
+                await asyncio.sleep(1)
 
     async def on_message(self, message):
-        # 봇 자신이 보낸 메시지는 무시
         if message.author == self.user:
             return
 
-        # '!쓰담쓰담' 명령어 처리
         if message.content.strip() == "!쓰담쓰담":
-            # Image 폴더 내 파일 삭제
-            image_folder = os.path.join(os.getcwd(), "Image")
-            if not os.path.exists(image_folder):
-                await message.channel.send("Image 폴더가 존재하지 않습니다!")
-                return
+            self.image_handler.clear_seen_hashes()
 
-            deleted_files = []
-            for file_name in os.listdir(image_folder):
-                file_path = os.path.join(image_folder, file_name)
-                if os.path.isfile(file_path):
-                    os.remove(file_path)  # 파일 삭제
-                    deleted_files.append(file_name)
-
-            if deleted_files:
-                file = discord.File("gaki.png", filename="gaki.png")
-
-                embed = discord.Embed(
-                    title="🧹 Image 폴더의 모든 파일을 싹~ 다 삭제해버릴게!♡",
-                    description="오빠의 흑역사는 이제 없어졌어! ㅋㅋㅋ",
-                    color=0xFF69B4
-                )
-                embed.set_image(url="attachment://gaki.png")
-
-                await message.channel.send(embed=embed, file=file)
-
-            else:
-                await message.channel.send("Image 폴더가 비어 있습니다!")
+            file = discord.File("gaki.png", filename="gaki.png")
+            embed = discord.Embed(
+                title="🧹 이미지 캐시를 싹~ 다 초기화했어!♡",
+                description="이제 새로운 이미지들을 받을 준비 완료!",
+                color=0xFF69B4
+            )
+            embed.set_image(url="attachment://gaki.png")
+            await message.channel.send(embed=embed, file=file)
 
     async def run_bot(self):
         async with self:

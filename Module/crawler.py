@@ -50,7 +50,7 @@ class DCInsideCrawler:
             if not posts:
                 return None
 
-            for post in posts[15:]:
+            for post in posts[20:]: # 20번째 post 부터 시작
                 try:
                     title_element = post.select_one("td.gall_tit > a:first-child")
                     if not title_element:
