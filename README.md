@@ -81,7 +81,7 @@ The script will automatically:
 - 
 
 ## to-do
-- send image via in-memory buffering
-- 
+- send image via in-memory buffering - done
+- gui?  
 ## License
 This project is licensed under the GPL License
