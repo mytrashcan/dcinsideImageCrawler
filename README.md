@@ -4,8 +4,7 @@
 
 ## Features
 
-- Scrapes images from DCInside posts and automatically downloads them.
-- Sends the downloaded images to Discord and Telegram bots.
+- Scrapes images from DCInside automatically posts on discord and telegram.
 - Works seamlessly on cloud environments like Oracle Cloud.
 - Supports multiple image formats and ensures they are properly handled.
 
