@@ -1,23 +1,41 @@
 import io
 import hashlib
+import logging
 import requests
+from collections import OrderedDict
 from PIL import Image
 from bs4 import BeautifulSoup
-from Module.config import HEADERS
+from Module.config import HEADERS, REQUEST_TIMEOUT
+
+logger = logging.getLogger(__name__)
 
 # Discord: 25MB, Telegram: 10MB (photo), 50MB (document)
 DISCORD_MAX_SIZE = 25 * 1024 * 1024
 TELEGRAM_MAX_SIZE = 10 * 1024 * 1024
 
+MAX_HASH_CACHE_SIZE = 1000
+
 
 class ImageHandler:
     def __init__(self):
-        self.seen_hashes = set()
+        self._seen_hashes = OrderedDict()
+        self.session = requests.Session()
+        self.session.headers.update(HEADERS)
+
+    def _check_hash(self, content_hash):
+        """해시 중복 체크 (크기 제한 적용)"""
+        if content_hash in self._seen_hashes:
+            self._seen_hashes.move_to_end(content_hash)
+            return True
+        if len(self._seen_hashes) >= MAX_HASH_CACHE_SIZE:
+            self._seen_hashes.popitem(last=False)
+        self._seen_hashes[content_hash] = None
+        return False
 
     def clear_seen_hashes(self):
         """중복 체크용 해시 캐시 초기화"""
-        self.seen_hashes.clear()
-        print("이미지 해시 캐시가 초기화되었습니다.")
+        self._seen_hashes.clear()
+        logger.info("이미지 해시 캐시가 초기화되었습니다.")
 
     def compress_gif(self, image_data, target_size, filename):
         """GIF 압축 (프레임 수 줄이기 + 크기 조절)"""
@@ -27,7 +45,6 @@ class ImageHandler:
             img = Image.open(buffer)
 
             if not getattr(img, 'is_animated', False):
-                # 애니메이션이 아닌 GIF는 그대로 반환
                 buffer.seek(0)
                 return buffer, original_size
 
@@ -70,18 +87,17 @@ class ImageHandler:
 
                 if output.tell() <= target_size:
                     output.seek(0)
-                    print(f"[GIF 압축] {filename}: {original_size} -> {output.tell()} bytes (scale: {scale})")
+                    logger.info(f"[GIF 압축] {filename}: {original_size} -> {output.tell()} bytes (scale: {scale:.1f})")
                     return output, output.tell()
 
                 scale -= 0.1
 
-            # 압축 실패시 원본 반환
-            print(f"[GIF 압축 실패] {filename}: 목표 크기 달성 불가")
+            logger.warning(f"[GIF 압축 실패] {filename}: 목표 크기 달성 불가")
             buffer.seek(0)
             return buffer, original_size
 
         except Exception as e:
-            print(f"[GIF 압축 에러] {filename}: {e}")
+            logger.error(f"[GIF 압축 에러] {filename}: {e}")
             buffer = io.BytesIO(image_data)
             return buffer, len(image_data)
 
@@ -92,7 +108,6 @@ class ImageHandler:
             buffer = io.BytesIO(image_data)
             img = Image.open(buffer)
 
-            # PNG를 RGB로 변환 (JPEG 저장 위해)
             if img.mode in ('RGBA', 'P'):
                 img = img.convert('RGB')
 
@@ -103,12 +118,11 @@ class ImageHandler:
 
                 if output.tell() <= target_size:
                     output.seek(0)
-                    print(f"[이미지 압축] {filename}: {original_size} -> {output.tell()} bytes (quality: {quality})")
+                    logger.info(f"[이미지 압축] {filename}: {original_size} -> {output.tell()} bytes (quality: {quality})")
                     return output, output.tell()
 
                 quality -= 10
 
-            # 크기도 줄여보기
             scale = 0.8
             while scale > 0.3:
                 new_size = (int(img.width * scale), int(img.height * scale))
@@ -119,7 +133,7 @@ class ImageHandler:
 
                 if output.tell() <= target_size:
                     output.seek(0)
-                    print(f"[이미지 압축] {filename}: {original_size} -> {output.tell()} bytes (scale: {scale})")
+                    logger.info(f"[이미지 압축] {filename}: {original_size} -> {output.tell()} bytes (scale: {scale:.1f})")
                     return output, output.tell()
 
                 scale -= 0.1
@@ -128,7 +142,7 @@ class ImageHandler:
             return buffer, original_size
 
         except Exception as e:
-            print(f"[이미지 압축 에러] {filename}: {e}")
+            logger.error(f"[이미지 압축 에러] {filename}: {e}")
             buffer = io.BytesIO(image_data)
             return buffer, len(image_data)
 
@@ -148,7 +162,7 @@ class ImageHandler:
             else:
                 discord_buffer, discord_size = self.compress_image(image_data, DISCORD_MAX_SIZE, filename)
             discord_compressed = True
-            print(f"[Discord 압축] {filename}: {original_size:,} -> {discord_size:,} bytes ({(1 - discord_size / original_size) * 100:.1f}% 감소)")
+            logger.info(f"[Discord 압축] {filename}: {original_size:,} -> {discord_size:,} bytes ({(1 - discord_size / original_size) * 100:.1f}% 감소)")
         else:
             discord_buffer = io.BytesIO(image_data)
 
@@ -159,13 +173,12 @@ class ImageHandler:
             else:
                 telegram_buffer, telegram_size = self.compress_image(image_data, TELEGRAM_MAX_SIZE, filename)
             telegram_compressed = True
-            print(f"[Telegram 압축] {filename}: {original_size:,} -> {telegram_size:,} bytes ({(1 - telegram_size / original_size) * 100:.1f}% 감소)")
+            logger.info(f"[Telegram 압축] {filename}: {original_size:,} -> {telegram_size:,} bytes ({(1 - telegram_size / original_size) * 100:.1f}% 감소)")
         else:
             telegram_buffer = io.BytesIO(image_data)
 
-        # 압축 안 한 경우
         if not discord_compressed and not telegram_compressed:
-            print(f"[압축 불필요] {filename}: {original_size:,} bytes (제한 이내)")
+            logger.debug(f"[압축 불필요] {filename}: {original_size:,} bytes (제한 이내)")
 
         discord_buffer.seek(0)
         telegram_buffer.seek(0)
@@ -175,10 +188,8 @@ class ImageHandler:
     def download_images(self, url):
         """첫 번째 이미지만 메모리로 다운로드하여 리스트로 반환"""
         try:
-            headers = HEADERS.copy()
-            headers['Referer'] = url
-
-            res = requests.get(url, headers=headers)
+            headers = {'Referer': url}
+            res = self.session.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
             res.raise_for_status()
             soup = BeautifulSoup(res.text, 'html.parser')
 
@@ -191,33 +202,32 @@ class ImageHandler:
                 img_url = img_tag['href']
                 filename = img_url.split("no=")[2] if "no=" in img_url else img_url.split("/")[-1]
 
-                headers['Referer'] = url
-                response = requests.get(img_url, headers=headers)
+                response = self.session.get(img_url, headers=headers, timeout=REQUEST_TIMEOUT)
+                response.raise_for_status()
                 image_data = response.content
 
                 # 해시로 중복 체크
                 content_hash = hashlib.sha256(image_data).hexdigest()
-                if content_hash in self.seen_hashes:
-                    print(f"동일한 파일이 존재합니다. PASS: {filename}")
+                if self._check_hash(content_hash):
+                    logger.info(f"동일한 파일이 존재합니다. PASS: {filename}")
                     continue
-
-                self.seen_hashes.add(content_hash)
 
                 # 이미지 처리 (압축 포함)
                 discord_buffer, telegram_buffer, is_gif = self.process_image(image_data, filename)
 
-                print(f"[메모리 버퍼] 파일명: {filename}, 원본 크기: {len(image_data)} bytes, GIF: {is_gif}")
+                logger.info(f"[메모리 버퍼] 파일명: {filename}, 원본 크기: {len(image_data)} bytes, GIF: {is_gif}")
 
-                # 첫 번째 이미지만 반환
                 return [(discord_buffer, telegram_buffer, filename, is_gif)]
 
             return None
 
-        except Exception as e:
-            print(f"이미지 다운로드 실패: {e}")
+        except requests.Timeout:
+            logger.warning(f"이미지 다운로드 타임아웃: {url}")
+            return None
+        except requests.RequestException as e:
+            logger.error(f"이미지 다운로드 실패: {e}")
             return None
 
-    # 하위 호환성을 위해 기존 메서드 유지
     def download_image(self, url):
         """단일 이미지 반환 (하위 호환성)"""
         images = self.download_images(url)

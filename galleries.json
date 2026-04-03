@@ -1,0 +1,34 @@
+{
+    "stariload": {
+        "base_url": "https://gall.dcinside.com/mgallery/board/lists/?id=staraiload",
+        "channel_ids": ["1352992953383125114", "1370703789492928513"]
+    },
+    "wuthering": {
+        "base_url": "https://gall.dcinside.com/mgallery/board/lists/?id=wutheringwaves",
+        "channel_ids": ["1352992953383125114", "1370703789492928513"]
+    },
+    "onshinproject": {
+        "base_url": "https://gall.dcinside.com/mgallery/board/lists?id=onshinproject",
+        "channel_ids": ["1352992953383125114", "1370703789492928513"]
+    },
+    "projectmx": {
+        "base_url": "https://gall.dcinside.com/mgallery/board/lists/?id=projectmx",
+        "channel_ids": ["1352992953383125114", "1370703789492928513"]
+    },
+    "zzz": {
+        "base_url": "https://gall.dcinside.com/mgallery/board/lists/?id=zenless_zone_zero",
+        "channel_ids": ["1352992953383125114", "1370703789492928513"]
+    },
+    "stellive": {
+        "base_url": "https://gall.dcinside.com/mgallery/board/lists/?id=stellive",
+        "channel_ids": ["1352993534747086949", "1370703789492928513"]
+    },
+    "kizunaai": {
+        "base_url": "https://gall.dcinside.com/mgallery/board/lists/?id=kizunaai",
+        "channel_ids": ["1352993534747086949", "1370703789492928513"]
+    },
+    "comic": {
+        "base_url": "https://gall.dcinside.com/board/lists/?id=comic_new6",
+        "channel_ids": ["1352993534747086949", "1370703789492928513"]
+    }
+}
