@@ -4,20 +4,20 @@
 
 ## Features
 
-- Scrapes images from DCInside automatically posts on discord and telegram.
-- Works seamlessly on cloud environments like Oracle Cloud.
-- Supports multiple image formats and ensures they are properly handled.
+- Scrapes images from DCInside and automatically posts to Discord and Telegram
+- Works seamlessly on cloud environments like Oracle Cloud
+- Supports multiple image formats (JPG, PNG, GIF) with automatic compression
+- Config-driven gallery management via `galleries.json` - no code changes needed to add new galleries
+- Duplicate image detection via SHA256 hashing
+- Multi-process architecture for concurrent gallery crawling
 
 ## Installation
 
 ### Prerequisites
 
-Before setting up dcinsideImageCrawler, ensure you have the following installed on your machine or server:
-
-- Python 3.x
+- Python 3.9+
 - **Discord Bot Token** (for Discord bot integration)
 - **Telegram Bot Token** (for Telegram bot integration)
-- `pip` (Python's package installer)
 
 ### Steps to Install
 
@@ -25,62 +25,90 @@ Before setting up dcinsideImageCrawler, ensure you have the following installed 
    ```bash
    git clone https://github.com/mytrashcan/dcinsideImageCrawler.git
    ```
-   
+
 2. Navigate to the project directory:
    ```bash
    cd dcinsideImageCrawler
    ```
 
-3. Install the required dependencies:
+3. (Optional) Set up a virtual environment:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # Linux/MacOS
+   ```
+
+4. Install the required dependencies:
    ```bash
    pip install -r requirements.txt
    ```
 
-4. (Optional) Set up a virtual environment to manage dependencies:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # For Linux/MacOS
-   ```
-   
-5. Set up environment variables for the bot tokens:  
-   Create a ```.env``` file and add the following lines:
+5. Create a `.env` file inside the `Module/` directory:
    ```env
    DISCORD_TOKEN=your_discord_bot_token
    TELEGRAM_TOKEN=your_telegram_bot_token
+   TELEGRAM_CHANNEL=your_telegram_chat_id
    ```
 
 ## Usage
-The script manages and runs multiple crawling processes that fetch images from DCInside posts. These crawling processes are handled sequentially, with a set maximum number of processes running at any given time.
 
-## Key Features:
-- **Process Management**: Limits the number of concurrently running processes (```MAX_PROCESSES```), which helps avoid overloading the system.
-- **Circular Queue**: The program cycles through the list of folders, ensuring each folder is processed and revisited after completing the set number of processes.
-- **Process Lifetime Management**: Ensures that each process has a maximum runtime (```MAX_PROCESS_LIFETIME```). Once a process reaches this time limit, it is terminated and replaced by a new one.
-  
-## Running the Script
+### Run all galleries
+```bash
+python launcher.py
+```
+The launcher manages multiple crawling processes using a circular queue, cycling through galleries defined in `galleries.json`.
 
-1. Script Overview: The script continuously manages processes that run a script (```main.py```) from multiple folders. If a script is already running for a folder, it will skip that folder.
-2. Run the script:
-   To run the main process management system, simply execute the following command:
-   ```bash
-   python launcher.py
-   ```
-3. Example Usage:
-The script will automatically:
-- Check if any process for a folder is already running.
-- Run the ```main.py``` script for folders in a circular queue (up to ```MAX_PROCESSES```).
-- Terminate any running processes after the set lifetime (```MAX_PROCESS_LIFETIME```).
+### Run a single gallery
+```bash
+python run_gallery.py <gallery_name>
+```
+Example:
+```bash
+python run_gallery.py stariload
+```
 
-4. Execution Flow:
-- The script first checks for the running status of all folders.
-- If a folder's script is not running, it starts a new process for it.
-- Processes are stopped after ```MAX_PROCESS_LIFETIME``` seconds, and the queue restarts.
+### Adding a new gallery
 
-## TroubleShooting
-- 
+Edit `galleries.json` and add a new entry:
+```json
+{
+    "my_gallery": {
+        "base_url": "https://gall.dcinside.com/mgallery/board/lists/?id=my_gallery_id",
+        "channel_ids": ["discord_channel_id_1", "discord_channel_id_2"]
+    }
+}
+```
+No code changes required - just restart the launcher.
 
-## to-do
-- send image via in-memory buffering - done
-- gui?  
+## Project Structure
+
+```
+dcinsideImageCrawler/
+├── launcher.py          # Process manager - runs multiple gallery crawlers
+├── run_gallery.py       # Single gallery runner (replaces per-folder main.py)
+├── galleries.json       # Gallery configuration (URLs, channel IDs)
+├── requirements.txt
+├── Module/
+│   ├── config.py        # Environment variables, headers, logging setup
+│   ├── crawler.py       # DCInside page scraping
+│   ├── dcbot.py         # Discord bot client & crawling orchestration
+│   ├── image_handler.py # Image downloading, deduplication, compression
+│   └── message_sender.py # Discord & Telegram message delivery
+```
+
+## Key Configuration
+
+| Setting | Location | Default | Description |
+|---------|----------|---------|-------------|
+| `MAX_PROCESSES` | `launcher.py` | 5 | Max concurrent gallery processes |
+| `MAX_PROCESS_LIFETIME` | `launcher.py` | 3600s | Process restart interval |
+| `REQUEST_TIMEOUT` | `Module/config.py` | 15s | HTTP request timeout |
+| Crawl interval | `Module/dcbot.py` | 20-40s | Random delay between crawls |
+
+## Discord Commands
+
+| Command | Description |
+|---------|-------------|
+| `!쓰담쓰담` | Clear image hash cache (resets duplicate detection) |
+
 ## License
-This project is licensed under the GPL License
+This project is licensed under the GPL License.
