@@ -1,10 +1,12 @@
-import os
 import asyncio
 import random
+import logging
 import discord
 from Module.crawler import DCInsideCrawler
 from Module.image_handler import ImageHandler
 from Module.message_sender import MessageSender
+
+logger = logging.getLogger(__name__)
 
 
 class DCBot(discord.Client):
@@ -18,43 +20,43 @@ class DCBot(discord.Client):
         self.message_sender = MessageSender(telegram_token, telegram_chat_id)
 
     async def on_ready(self):
-        print(f"Logged in as {self.user}")
+        logger.info(f"Logged in as {self.user}")
         await self.start_crawling()
 
     async def start_crawling(self):
         while True:
             try:
-                post = await self.crawler.get_latest_post()
+                # 동기 크롤러를 별도 스레드에서 실행하여 이벤트 루프 블로킹 방지
+                post = await asyncio.to_thread(self.crawler.get_latest_post)
                 if post and post['has_image']:
                     await self.process_post(post)
+            except discord.ConnectionClosed:
+                logger.warning("Discord 연결이 끊어졌습니다. 재연결 대기 중...")
+                await asyncio.sleep(5)
             except Exception as e:
-                print(f"Error during crawling: {e}")
+                logger.error(f"크롤링 중 오류: {e}", exc_info=True)
             delay = random.uniform(20, 40)
             await asyncio.sleep(delay)
 
     async def process_post(self, post):
-        # 여러 이미지 처리
-        images = self.image_handler.download_images(post['link'])
+        # blocking I/O를 별도 스레드에서 실행
+        images = await asyncio.to_thread(self.image_handler.download_images, post['link'])
         if not images:
             return
 
         for i, (discord_buffer, telegram_buffer, filename, is_gif) in enumerate(images):
-            # 첫 번째 이미지에만 제목 표시
             title = post['title'] if i == 0 else ""
 
-            # 디스코드 채널들에 전송
             for channel_id in self.channel_ids:
                 channel = self.get_channel(int(channel_id))
                 if channel:
                     await self.message_sender.send_to_discord(
                         channel, title, discord_buffer, filename
                     )
-                    discord_buffer.seek(0)  # 다음 채널을 위해 리셋
+                    discord_buffer.seek(0)
 
-            # 텔레그램에 전송
             await self.message_sender.send_to_telegram(telegram_buffer, filename, is_gif)
 
-            # 이미지 간 약간의 딜레이 (API 제한 방지)
             if len(images) > 1:
                 await asyncio.sleep(1)
 
@@ -67,7 +69,7 @@ class DCBot(discord.Client):
 
             file = discord.File("gaki.png", filename="gaki.png")
             embed = discord.Embed(
-                title="🧹 이미지 캐시를 싹~ 다 초기화했어!♡",
+                title="이미지 캐시를 초기화했습니다!",
                 description="이제 새로운 이미지들을 받을 준비 완료!",
                 color=0xFF69B4
             )

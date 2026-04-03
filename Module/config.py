@@ -1,13 +1,33 @@
 # config.py
 import os
+import sys
+import logging
 import discord
 from dotenv import load_dotenv
 
 load_dotenv()
+
 TOKEN = os.getenv("DISCORD_TOKEN")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHANNEL")
 
+# 시작 시 필수 환경변수 검증
+_required = {"DISCORD_TOKEN": TOKEN, "TELEGRAM_TOKEN": TELEGRAM_BOT_TOKEN, "TELEGRAM_CHANNEL": TELEGRAM_CHAT_ID}
+_missing = [k for k, v in _required.items() if not v]
+if _missing:
+    print(f"필수 환경변수 누락: {', '.join(_missing)}")
+    print(".env 파일을 확인해주세요.")
+    sys.exit(1)
+
+# 로깅 설정
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
+# HTTP 요청 타임아웃 (초)
+REQUEST_TIMEOUT = 15
 
 # 헤더 설정
 HEADERS = {
@@ -31,9 +51,3 @@ def get_discord_intents():
     intents = discord.Intents.default()
     intents.message_content = True
     return intents
-
-#채널 설정
-#CHANNEL_IDS = ['1337415871387144232', '1337336259605037096']  # 여러 채널 ID를 리스트로 설정
-
-# 기본 URL 설정
-#BASE_URL = "https://gall.dcinside.com/mgallery/board/lists?id=bang_dream"
