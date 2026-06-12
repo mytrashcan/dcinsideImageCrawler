@@ -1,16 +1,19 @@
-import io
 import hashlib
+import io
 import logging
-import requests
+import math
 from collections import OrderedDict
-from PIL import Image
+
+import requests
 from bs4 import BeautifulSoup
-from Module.config import HEADERS, REQUEST_TIMEOUT
+from PIL import Image
+
+from Module.config import BS_PARSER, DISCORD_MAX_SIZE, HEADERS, REQUEST_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
-# Discord: 25MB, Telegram: 10MB (photo), 50MB (document)
-DISCORD_MAX_SIZE = 25 * 1024 * 1024
+# Telegram: 10MB (photo), 50MB (document)
+# Discord 제한은 서버 부스트 레벨에 따라 다르므로 config.DISCORD_MAX_SIZE(.env로 조정 가능) 사용
 TELEGRAM_MAX_SIZE = 10 * 1024 * 1024
 
 MAX_HASH_CACHE_SIZE = 1000
@@ -66,7 +69,8 @@ class ImageHandler:
                 durations = [d * step for d in durations[::step]]
 
             # 2단계: 크기 조절 (비율 유지)
-            scale = 1.0
+            # 파일 크기는 대략 면적(scale^2)에 비례하므로 sqrt(목표/원본)을 시작점으로 추정
+            scale = min(1.0, round(math.sqrt(target_size / original_size), 1) + 0.1)
             while scale > 0.3:
                 new_width = int(frames[0].width * scale)
                 new_height = int(frames[0].height * scale)
@@ -123,7 +127,7 @@ class ImageHandler:
 
                 quality -= 10
 
-            scale = 0.8
+            scale = min(0.8, round(math.sqrt(target_size / original_size), 1) + 0.1)
             while scale > 0.3:
                 new_size = (int(img.width * scale), int(img.height * scale))
                 resized = img.resize(new_size, Image.Resampling.LANCZOS)
@@ -155,7 +159,7 @@ class ImageHandler:
         discord_compressed = False
         telegram_compressed = False
 
-        # Discord용 (25MB 제한)
+        # Discord용 (기본 10MB 제한 — DISCORD_MAX_SIZE_MB 환경변수로 조정)
         if original_size > DISCORD_MAX_SIZE:
             if is_gif:
                 discord_buffer, discord_size = self.compress_gif(image_data, DISCORD_MAX_SIZE, filename)
@@ -191,7 +195,7 @@ class ImageHandler:
             headers = {'Referer': url}
             res = self.session.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
             res.raise_for_status()
-            soup = BeautifulSoup(res.text, 'html.parser')
+            soup = BeautifulSoup(res.text, BS_PARSER)
 
             image_download_contents = soup.select("div.appending_file_box ul li")
             for li in image_download_contents:
@@ -227,11 +231,3 @@ class ImageHandler:
         except requests.RequestException as e:
             logger.error(f"이미지 다운로드 실패: {e}")
             return None
-
-    def download_image(self, url):
-        """단일 이미지 반환 (하위 호환성)"""
-        images = self.download_images(url)
-        if images:
-            discord_buffer, telegram_buffer, filename, is_gif = images[0]
-            return discord_buffer, telegram_buffer, filename
-        return None, None, None

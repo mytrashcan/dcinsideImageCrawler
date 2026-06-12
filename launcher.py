@@ -1,12 +1,13 @@
-import subprocess
-import os
 import json
-import time
-import sys
-import signal
 import logging
-import psutil
+import os
+import signal
+import subprocess
+import sys
+import time
 from collections import deque
+
+import psutil
 from dotenv import load_dotenv
 
 logging.basicConfig(
@@ -20,7 +21,7 @@ env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "Module", ".e
 load_dotenv(env_path)
 
 # galleries.json에서 갤러리 목록 로드
-with open(os.path.join(os.path.dirname(__file__), "galleries.json"), "r", encoding="utf-8") as f:
+with open(os.path.join(os.path.dirname(__file__), "galleries.json"), encoding="utf-8") as f:
     gallery_names = list(json.load(f).keys())
 
 folder_queue = deque(gallery_names)

@@ -47,6 +47,9 @@
    DISCORD_TOKEN=your_discord_bot_token
    TELEGRAM_TOKEN=your_telegram_bot_token
    TELEGRAM_CHANNEL=your_telegram_chat_id
+   # Optional: Discord upload limit in MB (default 10 — the free-tier limit since Sept 2024).
+   # Raise to 50 (boost level 2) or 100 (boost level 3) if your server is boosted.
+   DISCORD_MAX_SIZE_MB=10
    ```
 
 ## Usage

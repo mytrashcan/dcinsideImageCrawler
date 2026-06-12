@@ -1,11 +1,13 @@
-import sys
-import json
 import asyncio
+import json
+import sys
+
+from Module.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TOKEN, get_discord_intents, validate_required_env
 from Module.dcbot import DCBot
-from Module.config import TOKEN, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, get_discord_intents
+
 
 def load_gallery_config(gallery_name):
-    with open("galleries.json", "r", encoding="utf-8") as f:
+    with open("galleries.json", encoding="utf-8") as f:
         galleries = json.load(f)
 
     if gallery_name not in galleries:
@@ -16,6 +18,7 @@ def load_gallery_config(gallery_name):
     return galleries[gallery_name]
 
 async def main(gallery_name):
+    validate_required_env()
     config = load_gallery_config(gallery_name)
     intents = get_discord_intents()
     bot = DCBot(

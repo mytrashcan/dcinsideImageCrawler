@@ -1,7 +1,8 @@
 # config.py
+import logging
 import os
 import sys
-import logging
+
 import discord
 from dotenv import load_dotenv
 
@@ -11,13 +12,14 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHANNEL")
 
-# 시작 시 필수 환경변수 검증
-_required = {"DISCORD_TOKEN": TOKEN, "TELEGRAM_TOKEN": TELEGRAM_BOT_TOKEN, "TELEGRAM_CHANNEL": TELEGRAM_CHAT_ID}
-_missing = [k for k, v in _required.items() if not v]
-if _missing:
-    print(f"필수 환경변수 누락: {', '.join(_missing)}")
-    print(".env 파일을 확인해주세요.")
-    sys.exit(1)
+def validate_required_env():
+    """필수 환경변수 검증 (봇 시작 시 호출 — import 시점에는 검증하지 않음)"""
+    required = {"DISCORD_TOKEN": TOKEN, "TELEGRAM_TOKEN": TELEGRAM_BOT_TOKEN, "TELEGRAM_CHANNEL": TELEGRAM_CHAT_ID}
+    missing = [k for k, v in required.items() if not v]
+    if missing:
+        print(f"필수 환경변수 누락: {', '.join(missing)}")
+        print(".env 파일을 확인해주세요.")
+        sys.exit(1)
 
 # 로깅 설정
 logging.basicConfig(
@@ -28,6 +30,22 @@ logging.basicConfig(
 
 # HTTP 요청 타임아웃 (초)
 REQUEST_TIMEOUT = 15
+
+# Discord 업로드 제한 (MB) — 2024년 9월부터 무료(부스트 없는) 서버는 10MB
+# (부스트 레벨 2: 50MB, 레벨 3: 100MB — 서버에 맞게 .env의 DISCORD_MAX_SIZE_MB로 조정)
+_DEFAULT_DISCORD_MAX_SIZE_MB = 10
+try:
+    DISCORD_MAX_SIZE = int(float(os.getenv("DISCORD_MAX_SIZE_MB", _DEFAULT_DISCORD_MAX_SIZE_MB)) * 1024 * 1024)
+except ValueError:
+    print(f"DISCORD_MAX_SIZE_MB 값이 잘못되었습니다. 기본값 {_DEFAULT_DISCORD_MAX_SIZE_MB}MB를 사용합니다.")
+    DISCORD_MAX_SIZE = _DEFAULT_DISCORD_MAX_SIZE_MB * 1024 * 1024
+
+# BeautifulSoup 파서 (lxml이 설치되어 있으면 사용 — html.parser보다 수 배 빠름)
+try:
+    import lxml  # noqa: F401
+    BS_PARSER = "lxml"
+except ImportError:
+    BS_PARSER = "html.parser"
 
 # 헤더 설정
 HEADERS = {
