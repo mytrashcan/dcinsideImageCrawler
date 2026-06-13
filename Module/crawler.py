@@ -1,12 +1,18 @@
 import logging
-import requests
 from collections import OrderedDict
-from bs4 import BeautifulSoup
-from Module.config import HEADERS, REQUEST_TIMEOUT
+
+import requests
+from bs4 import BeautifulSoup, SoupStrainer
+
+from Module.config import BS_PARSER, HEADERS, REQUEST_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
 MAX_CACHE_SIZE = 500
+
+# tr 요소만 파싱하여 파싱 비용 절감
+# (SoupStrainer의 class_ 매칭은 다중 클래스 속성에서 동작하지 않으므로 태그로만 거름)
+_POST_ROW_STRAINER = SoupStrainer("tr")
 
 
 class BoundedSet:
@@ -34,20 +40,19 @@ class DCInsideCrawler:
     def __init__(self, base_url):
         self.base_url = base_url
         self.sent_titles = BoundedSet()
-        self.sent_image_links = BoundedSet()
         self.session = requests.Session()
         self.session.headers.update(HEADERS)
 
     def image_check(self, element):
         """이미지 포함 여부 체크"""
-        return "icon_pic" in str(element)
+        return element.select_one(".icon_pic") is not None
 
     def get_latest_post(self):
         """최신 게시글 정보 가져오기 (동기)"""
         try:
             res = self.session.get(self.base_url, timeout=REQUEST_TIMEOUT)
             res.raise_for_status()
-            soup = BeautifulSoup(res.text, 'html.parser')
+            soup = BeautifulSoup(res.text, BS_PARSER, parse_only=_POST_ROW_STRAINER)
 
             posts = soup.select("tr.ub-content")
             if not posts:
@@ -66,6 +71,8 @@ class DCInsideCrawler:
                     logger.debug(f"{title} {link} {image_insert}")
 
                     if title not in self.sent_titles:
+                        # 다음 사이클에서 같은 게시글을 재다운로드하지 않도록 기록
+                        self.sent_titles.add(title)
                         return {
                             'link': link,
                             'title': title,

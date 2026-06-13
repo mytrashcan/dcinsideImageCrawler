@@ -1,7 +1,9 @@
 import asyncio
-import random
 import logging
+import random
+
 import discord
+
 from Module.crawler import DCInsideCrawler
 from Module.image_handler import ImageHandler
 from Module.message_sender import MessageSender
@@ -17,7 +19,7 @@ class DCBot(discord.Client):
         self.channel_ids = channel_ids
         self.crawler = DCInsideCrawler(base_url)
         self.image_handler = ImageHandler()
-        self.message_sender = MessageSender(telegram_token, telegram_chat_id)
+        self.message_sender = MessageSender(telegram_token, telegram_chat_id, image_handler=self.image_handler)
 
     async def on_ready(self):
         logger.info(f"Logged in as {self.user}")

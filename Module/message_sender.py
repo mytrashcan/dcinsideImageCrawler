@@ -1,8 +1,8 @@
-import io
-import logging
 import asyncio
-from PIL import Image
+import logging
+
 import discord
+from PIL import Image
 from telegram import Bot
 from telegram.request import HTTPXRequest
 
@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class MessageSender:
-    def __init__(self, telegram_bot_token, telegram_chat_id):
+    def __init__(self, telegram_bot_token, telegram_chat_id, image_handler=None):
         # 타임아웃 설정 증가 (기본 5초 -> 30초)
         request = HTTPXRequest(
             connect_timeout=30.0,
@@ -19,6 +19,8 @@ class MessageSender:
         )
         self.telegram_bot = Bot(token=telegram_bot_token, request=request)
         self.telegram_chat_id = telegram_chat_id
+        # 413(파일 크기 초과) 시 재압축 폴백에 사용 (없으면 폴백 비활성화)
+        self.image_handler = image_handler
 
     def validate_image_buffer(self, image_buffer):
         """메모리 버퍼의 이미지 유효성 검증"""
@@ -32,17 +34,13 @@ class MessageSender:
                 return False
 
             try:
+                # verify()는 전체 디코딩 없이 무결성만 확인 (load()보다 훨씬 저렴)
                 with Image.open(image_buffer) as img:
                     img.verify()
 
                 image_buffer.seek(0)
 
-                with Image.open(image_buffer) as img:
-                    img.load()
-
-                image_buffer.seek(0)
-
-                logger.info(f"이미지 검증 성공 ({file_size} bytes)")
+                logger.debug(f"이미지 검증 성공 ({file_size} bytes)")
                 return True
 
             except Exception as e:
@@ -53,8 +51,34 @@ class MessageSender:
             logger.error(f"이미지 검증 실패: {e}")
             return False
 
+    def _recompress_for_discord(self, channel, image_buffer, filename):
+        """413 응답 후 채널이 속한 서버의 실제 제한에 맞춰 재압축 (실패 시 None)"""
+        image_buffer.seek(0)
+        data = image_buffer.read()
+        current_size = len(data)
+
+        # 서버 부스트 레벨 기준 제한을 알 수 있으면 사용, 아니면 절반 크기로 시도
+        # (discord.py 2.4.0은 무부스트 서버 filesize_limit을 25MB로 잘못 반환하므로 그대로 믿지 않음)
+        guild = getattr(channel, "guild", None)
+        limit = getattr(guild, "filesize_limit", None)
+        if limit and limit < current_size:
+            target = limit
+        else:
+            target = current_size // 2
+
+        is_gif = data[:6] in (b"GIF87a", b"GIF89a")
+        if is_gif:
+            buffer, size = self.image_handler.compress_gif(data, target, filename)
+        else:
+            buffer, size = self.image_handler.compress_image(data, target, filename)
+
+        if size >= current_size:
+            return None
+        buffer.seek(0)
+        return buffer
+
     async def send_to_discord(self, channel, title, image_buffer, filename):
-        """디스코드로 이미지 전송"""
+        """디스코드로 이미지 전송 (413 시 재압축 후 1회 재시도)"""
         try:
             if not self.validate_image_buffer(image_buffer):
                 logger.error("Discord 전송 취소: 이미지 검증 실패")
@@ -66,10 +90,25 @@ class MessageSender:
             )
             embed.set_image(url=f"attachment://{filename}")
 
-            await channel.send(
-                file=discord.File(image_buffer, filename=filename),
-                embed=embed
-            )
+            try:
+                await channel.send(
+                    file=discord.File(image_buffer, filename=filename),
+                    embed=embed
+                )
+            except discord.HTTPException as e:
+                if e.status != 413 or self.image_handler is None:
+                    raise
+                logger.warning(f"Discord 413 (파일 크기 초과): {filename} — 재압축 후 재시도")
+                recompressed = await asyncio.to_thread(
+                    self._recompress_for_discord, channel, image_buffer, filename
+                )
+                if recompressed is None:
+                    logger.error(f"Discord 재압축 실패: {filename}")
+                    return False
+                await channel.send(
+                    file=discord.File(recompressed, filename=filename),
+                    embed=embed
+                )
 
             logger.info(f"Discord 전송 성공: {filename}")
             return True
