@@ -169,10 +169,16 @@ class ImageHandler:
             logger.info(f"[Discord 압축] {filename}: {original_size:,} -> {discord_size:,} bytes ({(1 - discord_size / original_size) * 100:.1f}% 감소)")
         else:
             discord_buffer = io.BytesIO(image_data)
+            discord_size = original_size
 
         # Telegram용 (10MB 제한)
         if original_size > TELEGRAM_MAX_SIZE:
-            if is_gif:
+            if discord_compressed and discord_size <= TELEGRAM_MAX_SIZE:
+                # Discord용 압축 결과가 Telegram 제한도 만족하면 재압축 생략
+                # (기본 설정에서는 두 제한이 모두 10MB라 항상 이 경로를 탐)
+                telegram_buffer = io.BytesIO(discord_buffer.getvalue())
+                telegram_size = discord_size
+            elif is_gif:
                 telegram_buffer, telegram_size = self.compress_gif(image_data, TELEGRAM_MAX_SIZE, filename)
             else:
                 telegram_buffer, telegram_size = self.compress_image(image_data, TELEGRAM_MAX_SIZE, filename)

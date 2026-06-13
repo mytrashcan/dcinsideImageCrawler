@@ -71,6 +71,53 @@ class TestProcessImage:
         discord_buffer.read()
         assert telegram_buffer.tell() == 0
 
+    def test_telegram_reuses_discord_compression(self, monkeypatch):
+        """두 제한이 같으면 압축은 한 번만 수행하고 결과를 재사용해야 함"""
+        handler = ImageHandler()
+        data = make_png_bytes(size=(800, 800))
+        target = len(data) // 2
+        monkeypatch.setattr("Module.image_handler.DISCORD_MAX_SIZE", target)
+        monkeypatch.setattr("Module.image_handler.TELEGRAM_MAX_SIZE", target)
+
+        calls = []
+        original_compress = handler.compress_image
+
+        def counting_compress(*args, **kwargs):
+            calls.append(args)
+            return original_compress(*args, **kwargs)
+
+        monkeypatch.setattr(handler, "compress_image", counting_compress)
+
+        discord_buffer, telegram_buffer, _ = handler.process_image(data, "test.png")
+
+        assert len(calls) == 1
+        assert discord_buffer.getvalue() == telegram_buffer.getvalue()
+        # 재사용하더라도 버퍼는 서로 독립적이어야 함
+        discord_buffer.read()
+        assert telegram_buffer.tell() == 0
+
+    def test_telegram_compresses_separately_when_discord_result_too_large(self, monkeypatch):
+        """Discord 압축 결과가 Telegram 제한을 넘으면(부스트 서버) Telegram은 따로 압축해야 함"""
+        handler = ImageHandler()
+        data = b"x" * 1000
+        monkeypatch.setattr("Module.image_handler.DISCORD_MAX_SIZE", 800)
+        monkeypatch.setattr("Module.image_handler.TELEGRAM_MAX_SIZE", 200)
+
+        calls = []
+
+        def fake_compress(data_arg, target_arg, filename):
+            calls.append(target_arg)
+            result = b"y" * (target_arg - 10)
+            return io.BytesIO(result), len(result)
+
+        monkeypatch.setattr(handler, "compress_image", fake_compress)
+
+        discord_buffer, telegram_buffer, _ = handler.process_image(data, "test.png")
+
+        assert calls == [800, 200]
+        assert len(discord_buffer.getvalue()) == 790
+        assert len(telegram_buffer.getvalue()) == 190
+
 
 class TestCompress:
     def test_compress_image_reaches_target(self):
