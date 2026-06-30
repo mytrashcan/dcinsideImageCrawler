@@ -3,7 +3,16 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>자짤 갤러리</title>
+  <title>자짤 갤러리 · dcselfie</title>
+  <meta name="description" content="DCInside 갤러리에서 모은 자짤(셀카·짤방)을 실시간으로 보여주는 핀터레스트형 피드. 일정 시간이 지나면 자동으로 사라집니다." />
+
+  <!-- Google AdSense - 심사 통과 후 발급받은 ca-pub-XXXX 로 교체하세요.
+       (AdSense 가입 → 사이트 등록 → 아래 client 값을 본인 퍼블리셔 ID로) -->
+  <!--
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX"
+          crossorigin="anonymous"></script>
+  -->
+  <meta name="google-adsense-account" content="ca-pub-XXXXXXXXXXXXXXXX" />
   <style>
     * { box-sizing: border-box; }
     body {
@@ -42,7 +51,24 @@
       font-weight: 600;
       cursor: pointer;
     }
+    header .actions { display: flex; align-items: center; gap: 16px; }
+    header .actions a {
+      color: #333;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    header .actions a:hover { color: #e60023; text-decoration: underline; }
     header .actions button:hover { background: #ad001b; }
+    footer {
+      text-align: center;
+      padding: 28px 24px 40px;
+      color: #767676;
+      font-size: 13px;
+    }
+    footer a { color: #767676; text-decoration: none; }
+    footer a:hover { color: #e60023; text-decoration: underline; }
+    footer span { margin: 0 6px; }
     .masonry {
       column-count: 5;
       column-gap: 16px;
@@ -105,11 +131,21 @@
       <span class="logo">자짤 갤러리</span>
       <span class="subtitle">DCInside 자짤 피드</span>
     </div>
-    <div class="actions">
+    <nav class="actions">
+      <a href="/about">소개</a>
+      <a href="/privacy">개인정보처리방침</a>
       <button onclick="scrollToTop()">맨 위로</button>
-    </div>
+    </nav>
   </header>
   <main id="gallery" class="masonry"></main>
+  <footer>
+    <a href="/about">소개</a>
+    <span>·</span>
+    <a href="/privacy">개인정보처리방침</a>
+    <span>·</span>
+    <span>© <span id="year"></span> dcselfie.win</span>
+  </footer>
+  <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
 
   <script>
     const gallery = document.getElementById('gallery');
