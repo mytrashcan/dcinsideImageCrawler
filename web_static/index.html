@@ -81,7 +81,17 @@
     .card .meta .time {
       color: #767676;
       font-size: 12px;
+      white-space: nowrap;
+      margin-left: 8px;
     }
+    .card .meta .title {
+      color: #111;
+      text-decoration: none;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .card .meta .title:hover { text-decoration: underline; color: #e60023; }
     .empty {
       text-align: center;
       padding: 60px 24px;
@@ -124,10 +134,13 @@
       article.className = 'card';
       article.dataset.createdAt = it.created_at;
       const label = it.title || '자짤';
+      const titleHtml = it.link
+        ? `<a class="title" href="${escapeHtml(it.link)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`
+        : `<span>${escapeHtml(label)}</span>`;
       article.innerHTML = `
         <img src="${it.url}" alt="${escapeHtml(label)}" loading="lazy" />
         <div class="meta">
-          <span>${escapeHtml(label)}</span>
+          ${titleHtml}
           <span class="time">${timeAgo(it.created_at)}</span>
         </div>`;
       return article;

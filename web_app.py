@@ -76,11 +76,12 @@ def _is_duplicate(filename: str) -> bool:
     return False
 
 
-def save_bytes_to_gallery(data: bytes, filename: str, title: str = "") -> dict:
+def save_bytes_to_gallery(data: bytes, filename: str, title: str = "", link: str = "") -> dict:
     """이미지 바이트를 공유 갤러리 디렉터리에 기록한다. (크롤러 프로세스에서 호출)
 
     이미지는 <uuid>.<ext>, 메타데이터는 <uuid>.<ext>.json 사이드카로 저장한다.
     부분 기록된 파일이 웹 서버에 노출되지 않도록 임시파일에 쓴 뒤 atomic rename 한다.
+    link이 있으면 피드에서 제목이 해당 게시글 하이퍼링크가 된다.
     """
     if _is_duplicate(filename):
         return {}
@@ -89,7 +90,7 @@ def save_bytes_to_gallery(data: bytes, filename: str, title: str = "") -> dict:
     final = up / name
     tmp = up / f"{name}.part"
     created = time.time()
-    meta = {"filename": filename or name, "title": title, "created_at": created}
+    meta = {"filename": filename or name, "title": title, "link": link or "", "created_at": created}
     try:
         tmp.write_bytes(data)
         (up / f"{name}.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
@@ -102,14 +103,15 @@ def save_bytes_to_gallery(data: bytes, filename: str, title: str = "") -> dict:
 
 def _read_meta(up: Path, name: str, mtime: float):
     sidecar = up / f"{name}.json"
-    created, title = mtime, ""
+    created, title, link = mtime, "", ""
     try:
         meta = json.loads(sidecar.read_text(encoding="utf-8"))
         created = float(meta.get("created_at", mtime))
         title = meta.get("title", "") or ""
+        link = meta.get("link", "") or ""
     except (OSError, ValueError, TypeError):
         pass
-    return created, title
+    return created, title, link
 
 
 # snapshot은 웹 서버 프로세스 1개에서만 호출되므로 별도 프로세스 락은 불필요하다.
@@ -126,7 +128,7 @@ def snapshot(limit: int = 120) -> list[dict]:
             mtime = p.stat().st_mtime
         except OSError:
             continue
-        created, title = _read_meta(up, p.name, mtime)
+        created, title, link = _read_meta(up, p.name, mtime)
         if created < cutoff:
             remove.append(p)
             remove.append(up / f"{p.name}.json")
@@ -135,6 +137,7 @@ def snapshot(limit: int = 120) -> list[dict]:
             "id": p.name,
             "url": f"/static/images/{p.name}",
             "title": title,
+            "link": link,
             "created_at": created,
         })
     items.sort(key=lambda it: it["created_at"], reverse=True)
@@ -156,15 +159,15 @@ def attach_web_gallery(message_sender) -> None:
     original_discord = message_sender.send_to_discord
     original_telegram = message_sender.send_to_telegram
 
-    async def discord_with_web(channel, title, image_buffer, filename):
+    async def discord_with_web(channel, title, image_buffer, filename, url=None):
         try:
-            return await original_discord(channel, title, image_buffer, filename)
+            return await original_discord(channel, title, image_buffer, filename, url)
         finally:
             try:
                 image_buffer.seek(0)
                 data = image_buffer.read()
                 if data:
-                    save_bytes_to_gallery(data, filename or "", title or "")
+                    save_bytes_to_gallery(data, filename or "", title or "", url or "")
             except (OSError, ValueError):
                 pass
 
