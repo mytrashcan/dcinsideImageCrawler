@@ -147,7 +147,7 @@ It reads `/healthz` + `/feed` from the web server (`WEB_PORT`, default 8000) and
 
 Two common setups:
 
-- **On your own machine (e.g. a Mac left running)** - run the crawlers + web server locally and expose the domain with a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) (`cloudflared`). No port-forwarding, no public IP, automatic HTTPS. Keep the machine awake (`caffeinate -s` on macOS).
+- **On your own machine (e.g. a Mac left running)** - run the crawlers + web server locally and expose the domain with a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) (`cloudflared`). No port-forwarding, no public IP, automatic HTTPS. Keep the machine awake (`caffeinate -s`, or an app like Amphetamine). On macOS, `./dcselfie.sh install` registers the crawler / web server / tunnel as background **launchd** services (hidden, auto-restart, start at login); `./dcselfie.sh {start|stop|restart|status|logs|dash|uninstall}` manages them, and `./dcselfie.sh dash` opens the terminal monitor on demand.
 - **On a cloud VM (e.g. Oracle Cloud free tier)** - run everything as `systemd` services and front it with a reverse proxy (Caddy gives automatic HTTPS). See the systemd example below; bind the web server to `127.0.0.1` and let the proxy serve the domain on 443. On Oracle Cloud remember to open ports 80/443 in **both** the VCN security list **and** the instance's local `iptables`.
 
 ## Running on a server (e.g. Oracle Cloud)
