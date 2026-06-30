@@ -1,3 +1,1 @@
-# AdSense 심사 통과 후, 아래 줄의 pub-XXXX 를 본인 퍼블리셔 ID로 교체하세요.
-# (형식: google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0)
-google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0
+google.com, pub-4317936564749286, DIRECT, f08c47fec0942fa0
