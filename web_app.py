@@ -227,6 +227,10 @@ def create_app() -> FastAPI:
     async def about():
         return _page("about.html")
 
+    @app.get("/request", response_class=HTMLResponse)
+    async def request_gallery():
+        return _page("request.html")
+
     @app.get("/ads.txt", response_class=PlainTextResponse)
     async def ads_txt():
         f = static_dir / "ads.txt"
