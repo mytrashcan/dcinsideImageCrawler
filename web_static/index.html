@@ -28,7 +28,10 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px 16px;
     }
+    header .brand { display: flex; align-items: baseline; min-width: 0; }
     header .logo {
       font-weight: 700;
       font-size: 20px;
@@ -54,9 +57,28 @@
       text-decoration: none;
       font-size: 14px;
       font-weight: 500;
+      white-space: nowrap;
     }
     header .actions a:hover { color: #e60023; text-decoration: underline; }
     header .actions button:hover { background: #ad001b; }
+    @media (max-width: 600px) {
+      header { padding: 10px 14px; }
+      header .logo { font-size: 18px; }
+      header .subtitle { display: none; }
+      header .actions {
+        width: 100%;
+        justify-content: flex-start;
+        gap: 14px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      header .actions a { font-size: 13px; }
+      header .actions button {
+        margin-left: auto;
+        padding: 7px 14px;
+        font-size: 13px;
+      }
+    }
     footer {
       text-align: center;
       padding: 28px 24px 40px;
@@ -115,6 +137,33 @@
       white-space: nowrap;
     }
     .card .meta .title:hover { text-decoration: underline; color: #e60023; }
+    .card .meta-right { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+    .card .likes {
+      color: #e60023;
+      font-size: 12px;
+      font-weight: 700;
+      user-select: none;
+    }
+    .card .imgwrap { position: relative; }
+    .card .imgwrap img { -webkit-user-select: none; user-select: none; }
+    .heart-pop {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%) scale(0.2);
+      font-size: 84px;
+      color: #fff;
+      text-shadow: 0 2px 12px rgba(0,0,0,0.4);
+      pointer-events: none;
+      opacity: 0;
+      animation: heartPop .8s ease-out forwards;
+    }
+    @keyframes heartPop {
+      0%   { opacity: 0; transform: translate(-50%,-50%) scale(0.2); }
+      25%  { opacity: 1; transform: translate(-50%,-50%) scale(1.15); }
+      45%  { transform: translate(-50%,-50%) scale(0.95); }
+      70%  { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+      100% { opacity: 0; transform: translate(-50%,-60%) scale(1); }
+    }
     .empty {
       text-align: center;
       padding: 60px 24px;
@@ -124,7 +173,7 @@
 </head>
 <body>
   <header>
-    <div>
+    <div class="brand">
       <span class="logo">자짤 갤러리</span>
       <span class="subtitle">DCInside 자짤 피드</span>
     </div>
@@ -169,15 +218,23 @@
       const article = document.createElement('article');
       article.className = 'card';
       article.dataset.createdAt = it.created_at;
+      article.dataset.id = it.id;
       const label = it.title || '자짤';
+      const likes = it.likes || 0;
       const titleHtml = it.link
         ? `<a class="title" href="${escapeHtml(it.link)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`
-        : `<span>${escapeHtml(label)}</span>`;
+        : `<span class="title">${escapeHtml(label)}</span>`;
+      const heart = localStorage.getItem('liked_' + it.id) ? '♥' : '♡';
       article.innerHTML = `
-        <img src="${it.url}" alt="${escapeHtml(label)}" loading="lazy" />
+        <div class="imgwrap">
+          <img src="${it.url}" alt="${escapeHtml(label)}" loading="lazy" />
+        </div>
         <div class="meta">
           ${titleHtml}
-          <span class="time">${timeAgo(it.created_at)}</span>
+          <span class="meta-right">
+            <span class="likes"><span class="hi">${heart}</span> <b class="lc">${likes}</b></span>
+            <span class="time">${timeAgo(it.created_at)}</span>
+          </span>
         </div>`;
       return article;
     }
@@ -207,14 +264,56 @@
         cards.set(fresh[k].id, el);
       }
 
-      // 기존 카드의 '~분 전' 표시 갱신
-      for (const el of cards.values()) {
+      // 기존 카드의 '~분 전' + 좋아요 수 갱신 (다른 사람이 누른 것도 반영, 감소는 안 함)
+      const byId = new Map(items.map(i => [i.id, i]));
+      for (const [id, el] of cards) {
         const t = el.querySelector('.time');
         if (t) t.textContent = timeAgo(Number(el.dataset.createdAt));
+        const lc = el.querySelector('.lc');
+        const it = byId.get(id);
+        if (lc && it) lc.textContent = Math.max(Number(lc.textContent) || 0, it.likes || 0);
       }
 
       setEmpty(cards.size === 0);
     }
+
+    function popHeart(card) {
+      const wrap = card.querySelector('.imgwrap') || card;
+      const h = document.createElement('div');
+      h.className = 'heart-pop';
+      h.textContent = '❤';
+      wrap.appendChild(h);
+      setTimeout(() => h.remove(), 800);
+    }
+
+    function likeCard(card) {
+      popHeart(card);
+      const id = card.dataset.id;
+      if (!id || localStorage.getItem('liked_' + id)) return; // 이미 누른 이미지는 애니메이션만
+      localStorage.setItem('liked_' + id, '1');
+      const hi = card.querySelector('.hi');
+      if (hi) hi.textContent = '♥';
+      const lc = card.querySelector('.lc');
+      if (lc) lc.textContent = (Number(lc.textContent) || 0) + 1; // 낙관적 갱신
+      fetch('/like/' + encodeURIComponent(id), { method: 'POST' })
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d && lc) lc.textContent = d.likes; })
+        .catch(() => {});
+    }
+
+    // 더블클릭 / 모바일 더블탭으로 좋아요
+    gallery.addEventListener('dblclick', e => {
+      const card = e.target.closest('.card');
+      if (card) likeCard(card);
+    });
+    let lastTap = 0, lastCard = null;
+    gallery.addEventListener('touchend', e => {
+      const card = e.target.closest('.card');
+      if (!card) return;
+      const now = Date.now();
+      if (now - lastTap < 300 && lastCard === card) { e.preventDefault(); likeCard(card); lastTap = 0; }
+      else { lastTap = now; lastCard = card; }
+    });
 
     async function loadFeed() {
       try {
