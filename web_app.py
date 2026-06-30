@@ -12,6 +12,7 @@
 """
 import json
 import os
+import re
 import threading
 import time
 import uuid
@@ -103,15 +104,44 @@ def save_bytes_to_gallery(data: bytes, filename: str, title: str = "", link: str
 
 def _read_meta(up: Path, name: str, mtime: float):
     sidecar = up / f"{name}.json"
-    created, title, link = mtime, "", ""
+    created, title, link, likes = mtime, "", "", 0
     try:
         meta = json.loads(sidecar.read_text(encoding="utf-8"))
         created = float(meta.get("created_at", mtime))
         title = meta.get("title", "") or ""
         link = meta.get("link", "") or ""
+        likes = int(meta.get("likes", 0))
     except (OSError, ValueError, TypeError):
         pass
-    return created, title, link
+    return created, title, link, likes
+
+
+# 이미지 id는 uuid4().hex(32 hex) + 허용 확장자. 경로 조작/임의 파일 접근 방지용 검증.
+_ID_RE = re.compile(r"^[0-9a-f]{32}\.(jpg|jpeg|png|gif|webp)$")
+_like_lock = threading.Lock()
+
+
+def like_image(image_id: str):
+    """이미지에 좋아요 +1. 사이드카(.json)의 likes 필드를 증가시키고 새 값을 반환한다."""
+    if not _ID_RE.match(image_id or ""):
+        return None
+    up = _upload_dir()
+    if not (up / image_id).is_file():
+        return None
+    sidecar = up / f"{image_id}.json"
+    with _like_lock:
+        try:
+            meta = json.loads(sidecar.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            meta = {}
+        meta["likes"] = int(meta.get("likes", 0)) + 1
+        tmp = up / f"{image_id}.json.part"
+        try:
+            tmp.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+            tmp.rename(sidecar)  # 부분 기록 노출 방지
+        except OSError:
+            return None
+        return meta["likes"]
 
 
 # snapshot은 웹 서버 프로세스 1개에서만 호출되므로 별도 프로세스 락은 불필요하다.
@@ -128,7 +158,7 @@ def snapshot(limit: int = 120) -> list[dict]:
             mtime = p.stat().st_mtime
         except OSError:
             continue
-        created, title, link = _read_meta(up, p.name, mtime)
+        created, title, link, likes = _read_meta(up, p.name, mtime)
         if created < cutoff:
             remove.append(p)
             remove.append(up / f"{p.name}.json")
@@ -138,6 +168,7 @@ def snapshot(limit: int = 120) -> list[dict]:
             "url": f"/static/images/{p.name}",
             "title": title,
             "link": link,
+            "likes": likes,
             "created_at": created,
         })
     items.sort(key=lambda it: it["created_at"], reverse=True)
@@ -241,6 +272,13 @@ def create_app() -> FastAPI:
     @app.get("/feed")
     async def feed(limit: int = Query(60, ge=1, le=200)):
         return JSONResponse(snapshot(limit))
+
+    @app.post("/like/{image_id}")
+    async def like(image_id: str):
+        n = like_image(image_id)
+        if n is None:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        return JSONResponse({"id": image_id, "likes": n})
 
     @app.get("/healthz")
     async def healthz():
