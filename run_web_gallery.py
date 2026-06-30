@@ -1,19 +1,24 @@
+"""단일 갤러리 크롤러 + 임시 웹 갤러리를 한 프로세스에서 실행한다.
+
+여러 갤러리를 한 웹 페이지에 모으려면 이 파일 대신:
+  - launcher.py  (WEB_GALLERY=1 환경변수로 각 크롤러가 웹에 적재)
+  - run_web_server.py  (웹 서버 1개)
+를 따로 실행한다. (README의 "web gallery" 절 참고)
+"""
 import asyncio
-import logging
+import json
 import os
 import sys
 from threading import Thread
 
 from Module.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TOKEN, get_discord_intents, validate_required_env
 from Module.dcbot import DCBot
-from web_app import save_bytes_to_gallery
-
-logger = logging.getLogger(__name__)
+from web_app import attach_web_gallery, create_app
 
 
 def load_gallery_config(gallery_name):
     with open("galleries.json", encoding="utf-8") as f:
-        galleries = __import__("json").load(f)
+        galleries = json.load(f)
     if gallery_name not in galleries:
         print(f"알 수 없는 갤러리: {gallery_name}")
         print(f"사용 가능: {', '.join(galleries.keys())}")
@@ -24,7 +29,6 @@ def load_gallery_config(gallery_name):
 def start_web_gallery():
     import uvicorn
 
-    from web_app import create_app
     host = os.getenv("WEB_HOST", "0.0.0.0")
     port = int(os.getenv("WEB_PORT", "8000"))
     cfg = uvicorn.Config(create_app(), host=host, port=port, log_level="info")
@@ -47,31 +51,8 @@ async def main(gallery_name):
     web_thread = Thread(target=start_web_gallery, daemon=True)
     web_thread.start()
 
-    # attach web upload to discord/telegram senders without touching dcbot
-    original_discord = bot.message_sender.send_to_discord
-
-    async def discord_with_web(channel, title, image_buffer, filename):
-        try:
-            await original_discord(channel, title, image_buffer, filename)
-        finally:
-            image_buffer.seek(0)
-            data = image_buffer.read()
-            if data:
-                save_bytes_to_gallery(data, filename or "", title or "")
-
-    original_telegram = bot.message_sender.send_to_telegram
-
-    async def telegram_with_web(image_buffer, filename=None, is_gif=False, max_retries=3):
-        buf_copy = None
-        try:
-            buf_copy = image_buffer.getvalue()
-            await original_telegram(image_buffer, filename, is_gif, max_retries)
-        finally:
-            if buf_copy:
-                save_bytes_to_gallery(buf_copy, filename or "", "")
-
-    bot.message_sender.send_to_discord = discord_with_web
-    bot.message_sender.send_to_telegram = telegram_with_web
+    # dcbot은 건드리지 않고 센더만 감싸 웹 갤러리에 적재
+    attach_web_gallery(bot.message_sender)
 
     await bot.run_bot()
 

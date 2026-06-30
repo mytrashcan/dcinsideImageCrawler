@@ -89,19 +89,35 @@ Edit `galleries.json` and add a new entry:
 ```
 No code changes required - just restart the launcher.
 
-### Run a single gallery with the web gallery
+## Web gallery (optional)
 
-In addition to the Discord/Telegram bots, you can serve the collected images as a live web feed:
+You can serve the collected images as a live, **ephemeral** web feed - a Pinterest-style masonry grid at `http://<host>:8000/` that refreshes every 30 seconds. There is no database: images live in `web_static/images/`, and each image is deleted from disk once it falls out of the feed (older than the TTL, or pushed past the item cap). Nothing accumulates.
+
+The feed is backed by the **filesystem**, so multiple crawler processes can share one web page. Each crawler writes images (plus a small `.json` sidecar for title/timestamp) into the shared `web_static/images/` directory, and a single web-server process lists that directory newest-first.
+
+### All galleries on one page (with the launcher)
+
+Run the launcher with `WEB_GALLERY=1` so every crawler also writes to the shared gallery, and start one web server alongside it:
+
+```bash
+# terminal 1 - crawlers (all galleries in galleries.json), each feeding the gallery
+WEB_GALLERY=1 python launcher.py
+
+# terminal 2 - the web server
+python run_web_server.py
+```
+
+Open `http://localhost:8000/` - images from every gallery appear in one feed.
+
+### A single gallery + web in one process
+
+For quick local testing of one gallery, this runs the bot and an embedded web server together:
 
 ```bash
 python run_web_gallery.py <gallery_name>
 ```
 
-This runs the normal bot **and** starts a FastAPI server in a background thread. Every image the bot sends is also pushed to an in-memory feed and shown at `http://<host>:8000/` as a Pinterest-style masonry grid that refreshes every 30 seconds.
-
-The feed is **ephemeral by design**: there is no database. Images are written to `web_static/images/`, kept only while they are in the feed, and automatically removed once they fall out of the feed (older than the TTL, or pushed past the item cap). When an image expires it is deleted from disk - nothing accumulates.
-
-Endpoints:
+### Endpoints
 
 | Path | Description |
 |------|-------------|
@@ -145,8 +161,9 @@ Notes for small instances (1 GB RAM free tier):
 dcinsideImageCrawler/
 ├── launcher.py            # Process manager - runs multiple gallery crawlers
 ├── run_gallery.py         # Single gallery runner (replaces per-folder main.py)
-├── run_web_gallery.py     # Single gallery runner + ephemeral web gallery (FastAPI)
-├── web_app.py             # FastAPI app & ephemeral feed state (TTL/prune)
+├── run_web_gallery.py     # Single gallery runner + embedded web gallery (FastAPI)
+├── run_web_server.py      # Standalone web gallery server (for the multi-gallery launcher setup)
+├── web_app.py             # FastAPI app & filesystem-backed ephemeral feed (TTL/prune)
 ├── web_static/            # Gallery page (index.html) + temporary images/ (gitignored)
 ├── galleries.json         # Gallery configuration (URLs, channel IDs)
 ├── requirements.txt       # Runtime dependencies
@@ -171,7 +188,8 @@ dcinsideImageCrawler/
 | `MAX_PROCESS_LIFETIME` | `launcher.py` | 3600s | Process restart interval |
 | `REQUEST_TIMEOUT` | `Module/config.py` | 15s | HTTP request timeout |
 | Crawl interval | `Module/dcbot.py` | 20-40s | Random delay between crawls |
-| `WEB_HOST` | env | `0.0.0.0` | Web gallery bind address (`run_web_gallery.py`) |
+| `WEB_GALLERY` | env | unset | Set to `1` so `launcher.py`/`run_gallery.py` crawlers also feed the web gallery |
+| `WEB_HOST` | env | `0.0.0.0` | Web gallery bind address |
 | `WEB_PORT` | env | 8000 | Web gallery port |
 | `WEB_IMAGE_TTL_SECONDS` | env | 10800 (3h) | How long an image stays in the feed before it expires and is deleted |
 | `WEB_FEED_MAX_ITEMS` | env | 120 | Max images kept in the feed; older ones are pruned and deleted |

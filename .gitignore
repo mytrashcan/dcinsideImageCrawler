@@ -179,3 +179,4 @@ pyrightconfig.json
 # End of https://www.toptal.com/developers/gitignore/api/python
 # 웹 갤러리 임시 이미지 (ephemeral, 커밋 금지)
 web_static/images/
+serve_demo.py
