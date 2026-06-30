@@ -18,7 +18,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, Query
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
@@ -194,12 +194,49 @@ def create_app() -> FastAPI:
     app = FastAPI(title="dcinsideImageCrawler Gallery")
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
+    def _page(name: str) -> HTMLResponse:
+        f = static_dir / name
+        if not f.exists():
+            return HTMLResponse(f"<h1>{name} not found</h1>", status_code=404)
+        return HTMLResponse(f.read_text(encoding="utf-8"))
+
+    @app.middleware("http")
+    async def cache_control(request, call_next):
+        resp = await call_next(request)
+        path = request.url.path
+        if path.startswith("/static/images/"):
+            # uuid URL이라 내용이 절대 안 바뀜 → 길게 캐시(CF 엣지가 이미지 서빙 부담을 가져감)
+            resp.headers["Cache-Control"] = "public, max-age=86400, immutable"
+        elif path == "/feed" or path == "/":
+            # 실시간 피드/페이지는 절대 캐시 금지 (캐시되면 새 자짤이 안 뜸)
+            resp.headers["Cache-Control"] = "no-store"
+        return resp
+
     @app.get("/", response_class=HTMLResponse)
     async def index():
         idx = static_dir / "index.html"
         if not idx.exists():
             return HTMLResponse("<h1>Gallery starting...</h1>")
-        return idx.read_text(encoding="utf-8")
+        return HTMLResponse(idx.read_text(encoding="utf-8"))
+
+    @app.get("/privacy", response_class=HTMLResponse)
+    async def privacy():
+        return _page("privacy.html")
+
+    @app.get("/about", response_class=HTMLResponse)
+    async def about():
+        return _page("about.html")
+
+    @app.get("/request", response_class=HTMLResponse)
+    async def request_gallery():
+        return _page("request.html")
+
+    @app.get("/ads.txt", response_class=PlainTextResponse)
+    async def ads_txt():
+        f = static_dir / "ads.txt"
+        if f.exists():
+            return PlainTextResponse(f.read_text(encoding="utf-8"))
+        return PlainTextResponse("", status_code=404)
 
     @app.get("/feed")
     async def feed(limit: int = Query(60, ge=1, le=200)):

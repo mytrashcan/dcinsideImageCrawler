@@ -131,6 +131,25 @@ python run_web_gallery.py <gallery_name>
 
 > The server binds to `0.0.0.0:8000` by default so it is reachable from outside the host. There is no authentication - put it behind a reverse proxy / firewall, or set `WEB_HOST=127.0.0.1` if you only want local access.
 
+### Terminal monitor
+
+A live terminal dashboard shows the web feed and crawler processes at a glance:
+
+```bash
+python dashboard.py          # refreshes every 2s (Ctrl+C to quit)
+python dashboard.py --once   # print a single frame
+python dashboard.py -i 1     # custom refresh interval (seconds)
+```
+
+It reads `/healthz` + `/feed` from the web server (`WEB_PORT`, default 8000) and scans running `launcher.py` / `run_gallery.py` processes via `psutil` - no extra wiring needed. Panels: service status (web up/down, feed size, TTL), per-gallery crawler status (PID / memory / uptime), and the most recent images.
+
+## Deploying the web gallery
+
+Two common setups:
+
+- **On your own machine (e.g. a Mac left running)** - run the crawlers + web server locally and expose the domain with a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) (`cloudflared`). No port-forwarding, no public IP, automatic HTTPS. Keep the machine awake (`caffeinate -s`, or an app like Amphetamine). On macOS, `./dcselfie.sh install` registers the crawler / web server / tunnel as background **launchd** services (hidden, auto-restart, start at login); `./dcselfie.sh {start|stop|restart|status|logs|dash|uninstall}` manages them, and `./dcselfie.sh dash` opens the terminal monitor on demand.
+- **On a cloud VM (e.g. Oracle Cloud free tier)** - run everything as `systemd` services and front it with a reverse proxy (Caddy gives automatic HTTPS). See the systemd example below; bind the web server to `127.0.0.1` and let the proxy serve the domain on 443. On Oracle Cloud remember to open ports 80/443 in **both** the VCN security list **and** the instance's local `iptables`.
+
 ## Running on a server (e.g. Oracle Cloud)
 
 Run the launcher as a systemd service so it survives reboots and SSH disconnects:
@@ -167,6 +186,7 @@ dcinsideImageCrawler/
 ├── run_gallery.py         # Single gallery runner (replaces per-folder main.py)
 ├── run_web_gallery.py     # Single gallery runner + embedded web gallery (FastAPI)
 ├── run_web_server.py      # Standalone web gallery server (for the multi-gallery launcher setup)
+├── dashboard.py           # Live terminal monitor (web feed + crawler processes)
 ├── web_app.py             # FastAPI app & filesystem-backed ephemeral feed (TTL/prune)
 ├── web_static/            # Gallery page (index.html) + temporary images/ (gitignored)
 ├── galleries.json         # Gallery configuration (URLs, channel IDs)

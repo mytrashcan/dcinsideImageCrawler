@@ -9,3 +9,4 @@ Pillow>=10.0.0
 lxml>=5.0.0
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
+rich==13.9.4
