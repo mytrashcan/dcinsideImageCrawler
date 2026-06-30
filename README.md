@@ -13,7 +13,7 @@
   - Automatic re-compress & retry on Discord 413 (file too large) responses
 - Fast HTML parsing via `lxml` + `SoupStrainer` (falls back to `html.parser` if lxml is unavailable)
 - Config-driven gallery management via `galleries.json` - no code changes needed to add new galleries
-- Optional **ephemeral web gallery** - serves collected images in a Pinterest-style masonry feed that auto-expires (TTL/prune), no persistent storage
+- Optional **ephemeral web gallery** - serves collected images in a near real-time, Pinterest-style masonry feed (titles link to the source post) that auto-expires (TTL/item-cap), no persistent storage
 - Duplicate image detection via SHA256 hashing
 - Multi-process architecture for concurrent gallery crawling
 - Test suite (pytest) and lint (ruff) enforced by GitHub Actions CI
@@ -91,9 +91,13 @@ No code changes required - just restart the launcher.
 
 ## Web gallery (optional)
 
-You can serve the collected images as a live, **ephemeral** web feed - a Pinterest-style masonry grid at `http://<host>:8000/` that refreshes every 30 seconds. There is no database: images live in `web_static/images/`, and each image is deleted from disk once it falls out of the feed (older than the TTL, or pushed past the item cap). Nothing accumulates.
+You can serve the collected images as a live, **ephemeral** web feed - a Pinterest-style masonry grid at `http://<host>:8000/` that updates roughly in real time (the page polls every 5 seconds and only adds new cards). Post titles link back to the original DCInside post.
 
-The feed is backed by the **filesystem**, so multiple crawler processes can share one web page. Each crawler writes images (plus a small `.json` sidecar for title/timestamp) into the shared `web_static/images/` directory, and a single web-server process lists that directory newest-first.
+**Nothing is stored permanently.** There is no database. Images are written to `web_static/images/` only as a temporary cache so the browser can load them, and each file is **deleted from disk** the moment it falls out of the feed - once it is older than the TTL (default 3 h) or pushed past the item cap. At most `WEB_FEED_MAX_ITEMS` images (default **120**) are kept; the 121st arrival deletes the oldest. Nothing accumulates.
+
+> The bot's own Discord/Telegram delivery is fully in-memory (image bytes are sent and garbage-collected, never touching disk). The temporary files exist *only* to display the web gallery. A disk-backed cache is required because the launcher runs each gallery as a separate process, and the filesystem is the only shared store between them.
+
+The feed is backed by the **filesystem**, so those multiple crawler processes can share one web page. Each crawler writes images (plus a small `.json` sidecar for title / post link / timestamp) into the shared `web_static/images/` directory, and a single web-server process lists that directory newest-first.
 
 ### All galleries on one page (with the launcher)
 
