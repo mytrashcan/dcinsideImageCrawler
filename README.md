@@ -13,6 +13,7 @@
   - Automatic re-compress & retry on Discord 413 (file too large) responses
 - Fast HTML parsing via `lxml` + `SoupStrainer` (falls back to `html.parser` if lxml is unavailable)
 - Config-driven gallery management via `galleries.json` - no code changes needed to add new galleries
+- Optional **ephemeral web gallery** - serves collected images in a Pinterest-style masonry feed that auto-expires (TTL/prune), no persistent storage
 - Duplicate image detection via SHA256 hashing
 - Multi-process architecture for concurrent gallery crawling
 - Test suite (pytest) and lint (ruff) enforced by GitHub Actions CI
@@ -88,6 +89,28 @@ Edit `galleries.json` and add a new entry:
 ```
 No code changes required - just restart the launcher.
 
+### Run a single gallery with the web gallery
+
+In addition to the Discord/Telegram bots, you can serve the collected images as a live web feed:
+
+```bash
+python run_web_gallery.py <gallery_name>
+```
+
+This runs the normal bot **and** starts a FastAPI server in a background thread. Every image the bot sends is also pushed to an in-memory feed and shown at `http://<host>:8000/` as a Pinterest-style masonry grid that refreshes every 30 seconds.
+
+The feed is **ephemeral by design**: there is no database. Images are written to `web_static/images/`, kept only while they are in the feed, and automatically removed once they fall out of the feed (older than the TTL, or pushed past the item cap). When an image expires it is deleted from disk - nothing accumulates.
+
+Endpoints:
+
+| Path | Description |
+|------|-------------|
+| `/` | Masonry gallery page |
+| `/feed?limit=N` | JSON feed of recent items (`limit` 1-200, default 60) |
+| `/healthz` | Health check (`{ok, items, ttl}`) |
+
+> The server binds to `0.0.0.0:8000` by default so it is reachable from outside the host. There is no authentication - put it behind a reverse proxy / firewall, or set `WEB_HOST=127.0.0.1` if you only want local access.
+
 ## Running on a server (e.g. Oracle Cloud)
 
 Run the launcher as a systemd service so it survives reboots and SSH disconnects:
@@ -122,6 +145,9 @@ Notes for small instances (1 GB RAM free tier):
 dcinsideImageCrawler/
 ├── launcher.py            # Process manager - runs multiple gallery crawlers
 ├── run_gallery.py         # Single gallery runner (replaces per-folder main.py)
+├── run_web_gallery.py     # Single gallery runner + ephemeral web gallery (FastAPI)
+├── web_app.py             # FastAPI app & ephemeral feed state (TTL/prune)
+├── web_static/            # Gallery page (index.html) + temporary images/ (gitignored)
 ├── galleries.json         # Gallery configuration (URLs, channel IDs)
 ├── requirements.txt       # Runtime dependencies
 ├── requirements-dev.txt   # Dev dependencies (pytest, ruff)
@@ -145,6 +171,11 @@ dcinsideImageCrawler/
 | `MAX_PROCESS_LIFETIME` | `launcher.py` | 3600s | Process restart interval |
 | `REQUEST_TIMEOUT` | `Module/config.py` | 15s | HTTP request timeout |
 | Crawl interval | `Module/dcbot.py` | 20-40s | Random delay between crawls |
+| `WEB_HOST` | env | `0.0.0.0` | Web gallery bind address (`run_web_gallery.py`) |
+| `WEB_PORT` | env | 8000 | Web gallery port |
+| `WEB_IMAGE_TTL_SECONDS` | env | 10800 (3h) | How long an image stays in the feed before it expires and is deleted |
+| `WEB_FEED_MAX_ITEMS` | env | 120 | Max images kept in the feed; older ones are pruned and deleted |
+| `WEB_STATIC_DIR` | env | `web_static` | Directory for the gallery page and temporary images |
 
 ## Development
 
