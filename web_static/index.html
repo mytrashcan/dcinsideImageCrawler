@@ -103,7 +103,7 @@
 
   <script>
     const gallery = document.getElementById('gallery');
-    const urls = [];
+    const cards = new Map(); // id -> card element (증분 렌더용)
 
     function timeAgo(epoch) {
       const diff = Math.floor((Date.now() / 1000) - epoch);
@@ -113,33 +113,64 @@
       return `${Math.floor(diff / 86400)}일 전`;
     }
 
-    function render(items) {
-      if (!items.length) {
-        gallery.innerHTML = '<div class="empty">아직 업로드된 자짤이 없습니다. 봇이 새 이미지를 수집하기 시작하면 여기에 표시됩니다.</div>';
-        return;
-      }
-      gallery.innerHTML = items.map(it => `
-        <article class="card">
-          <img src="${it.url}" alt="${escapeHtml(it.title || '자짤')}" loading="lazy" />
-          <div class="meta">
-            <span>${escapeHtml(it.title || '자짤')}</span>
-            <span class="time">${timeAgo(it.created_at)}</span>
-          </div>
-        </article>
-      `).join('');
-    }
-
     function escapeHtml(text) {
       const d = document.createElement('div');
       d.textContent = text;
       return d.innerHTML;
     }
 
+    function makeCard(it) {
+      const article = document.createElement('article');
+      article.className = 'card';
+      article.dataset.createdAt = it.created_at;
+      const label = it.title || '자짤';
+      article.innerHTML = `
+        <img src="${it.url}" alt="${escapeHtml(label)}" loading="lazy" />
+        <div class="meta">
+          <span>${escapeHtml(label)}</span>
+          <span class="time">${timeAgo(it.created_at)}</span>
+        </div>`;
+      return article;
+    }
+
+    function setEmpty(show) {
+      const existing = gallery.querySelector('.empty');
+      if (show && !existing) {
+        gallery.innerHTML = '<div class="empty">아직 업로드된 자짤이 없습니다. 봇이 새 이미지를 수집하기 시작하면 여기에 표시됩니다.</div>';
+      } else if (!show && existing) {
+        existing.remove();
+      }
+    }
+
+    function sync(items) {
+      const ids = new Set(items.map(i => i.id));
+
+      // 사라진(만료된) 이미지는 DOM에서 제거
+      for (const [id, el] of cards) {
+        if (!ids.has(id)) { el.remove(); cards.delete(id); }
+      }
+
+      // 새 이미지만 추가 (피드는 최신순 → 오래된 새 항목부터 prepend 하면 최신이 맨 위)
+      const fresh = items.filter(i => !cards.has(i.id));
+      for (let k = fresh.length - 1; k >= 0; k--) {
+        const el = makeCard(fresh[k]);
+        gallery.prepend(el);
+        cards.set(fresh[k].id, el);
+      }
+
+      // 기존 카드의 '~분 전' 표시 갱신
+      for (const el of cards.values()) {
+        const t = el.querySelector('.time');
+        if (t) t.textContent = timeAgo(Number(el.dataset.createdAt));
+      }
+
+      setEmpty(cards.size === 0);
+    }
+
     async function loadFeed() {
       try {
-        const res = await fetch(`/feed?limit=${encodeURIComponent(document.getElementById('limit')?.value || '60')}`);
-        const data = await res.json();
-        render(data);
+        const res = await fetch('/feed?limit=200');
+        sync(await res.json());
       } catch (e) {
         console.error('feed load failed', e);
       }
@@ -149,9 +180,9 @@
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
-    // 초기 로드 및 주기적 갱신 (ephemeral 피드 → TTL 경과 시 자동 삭제)
+    // 초기 로드 + 5초마다 증분 갱신 (ephemeral 피드 → TTL 경과 시 자동 삭제)
     loadFeed();
-    setInterval(loadFeed, 30000);
+    setInterval(loadFeed, 5000);
   </script>
 </body>
 </html>
