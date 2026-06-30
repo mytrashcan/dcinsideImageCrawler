@@ -28,7 +28,10 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px 16px;
     }
+    header .brand { display: flex; align-items: baseline; min-width: 0; }
     header .logo {
       font-weight: 700;
       font-size: 20px;
@@ -54,9 +57,28 @@
       text-decoration: none;
       font-size: 14px;
       font-weight: 500;
+      white-space: nowrap;
     }
     header .actions a:hover { color: #e60023; text-decoration: underline; }
     header .actions button:hover { background: #ad001b; }
+    @media (max-width: 600px) {
+      header { padding: 10px 14px; }
+      header .logo { font-size: 18px; }
+      header .subtitle { display: none; }
+      header .actions {
+        width: 100%;
+        justify-content: flex-start;
+        gap: 14px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      header .actions a { font-size: 13px; }
+      header .actions button {
+        margin-left: auto;
+        padding: 7px 14px;
+        font-size: 13px;
+      }
+    }
     footer {
       text-align: center;
       padding: 28px 24px 40px;
@@ -151,7 +173,7 @@
 </head>
 <body>
   <header>
-    <div>
+    <div class="brand">
       <span class="logo">자짤 갤러리</span>
       <span class="subtitle">DCInside 자짤 피드</span>
     </div>
