@@ -10,15 +10,20 @@
 
 저장소가 없어 어느 프로세스에서든 동작하며, TTL이 지나면 파일이 실제로 사라진다.
 """
+import asyncio
+import hashlib
+import hmac
 import json
 import os
 import re
 import threading
 import time
+import urllib.parse
+import urllib.request
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -218,6 +223,60 @@ def attach_web_gallery(message_sender) -> None:
     message_sender.send_to_telegram = telegram_with_web
 
 
+# ── Cloudflare Turnstile (봇 차단) ──
+# 시크릿이 설정돼 있을 때만 활성화. 사이트키는 공개값(HTML에 주입), 시크릿은 .env에만 둔다.
+_TS_COOKIE = "ts_ok"
+_TS_TTL = 86400  # 한 번 통과하면 24시간 유지
+
+
+def _ts_sitekey() -> str:
+    return os.getenv("TURNSTILE_SITEKEY", "")
+
+
+def _ts_secret() -> str:
+    return os.getenv("TURNSTILE_SECRET", "")
+
+
+def _ts_enabled() -> bool:
+    return bool(_ts_secret())
+
+
+def _ts_make_cookie() -> str:
+    exp = int(time.time()) + _TS_TTL
+    sig = hmac.new(_ts_secret().encode(), str(exp).encode(), hashlib.sha256).hexdigest()
+    return f"{exp}.{sig}"
+
+
+def _ts_cookie_valid(value: str) -> bool:
+    if not value or "." not in value:
+        return False
+    exp_s, sig = value.split(".", 1)
+    try:
+        exp = int(exp_s)
+    except ValueError:
+        return False
+    if time.time() > exp:
+        return False
+    good = hmac.new(_ts_secret().encode(), str(exp).encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(sig, good)
+
+
+def _ts_siteverify(token: str, remoteip: str) -> bool:
+    data = urllib.parse.urlencode({
+        "secret": _ts_secret(),
+        "response": token or "",
+        "remoteip": remoteip or "",
+    }).encode()
+    req = urllib.request.Request(
+        "https://challenges.cloudflare.com/turnstile/v0/siteverify", data=data
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return bool(json.load(r).get("success", False))
+    except Exception:
+        return False
+
+
 def create_app() -> FastAPI:
     static_dir = _static_dir()
     _upload_dir()  # 정적 마운트 전에 디렉터리 보장
@@ -248,7 +307,9 @@ def create_app() -> FastAPI:
         idx = static_dir / "index.html"
         if not idx.exists():
             return HTMLResponse("<h1>Gallery starting...</h1>")
-        return HTMLResponse(idx.read_text(encoding="utf-8"))
+        html = idx.read_text(encoding="utf-8")
+        html = html.replace("{{TURNSTILE_SITEKEY}}", _ts_sitekey() if _ts_enabled() else "")
+        return HTMLResponse(html)
 
     @app.get("/privacy", response_class=HTMLResponse)
     async def privacy():
@@ -270,8 +331,31 @@ def create_app() -> FastAPI:
         return PlainTextResponse("", status_code=404)
 
     @app.get("/feed")
-    async def feed(limit: int = Query(60, ge=1, le=200)):
+    async def feed(request: Request, limit: int = Query(60, ge=1, le=200)):
+        # Cloudflare를 거친 공개 요청(cf-connecting-ip 존재)만 Turnstile 통과를 요구한다.
+        # 로컬 직접 접근(대시보드 등)은 헤더가 없어 그대로 허용.
+        if _ts_enabled() and request.headers.get("cf-connecting-ip"):
+            if not _ts_cookie_valid(request.cookies.get(_TS_COOKIE, "")):
+                return JSONResponse({"error": "verification required"}, status_code=403)
         return JSONResponse(snapshot(limit))
+
+    @app.post("/verify")
+    async def verify(request: Request):
+        if not _ts_enabled():
+            return JSONResponse({"ok": True})
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        token = body.get("token", "") if isinstance(body, dict) else ""
+        ip = request.headers.get("cf-connecting-ip", "")
+        ok = await asyncio.to_thread(_ts_siteverify, token, ip)
+        if not ok:
+            return JSONResponse({"ok": False}, status_code=403)
+        resp = JSONResponse({"ok": True})
+        resp.set_cookie(_TS_COOKIE, _ts_make_cookie(), max_age=_TS_TTL,
+                        httponly=True, samesite="lax", secure=True)
+        return resp
 
     @app.post("/like/{image_id}")
     async def like(image_id: str):
