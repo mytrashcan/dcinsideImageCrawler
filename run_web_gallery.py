@@ -1,14 +1,13 @@
 import asyncio
+import logging
 import os
 import sys
 from threading import Thread
 
 from Module.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TOKEN, get_discord_intents, validate_required_env
 from Module.dcbot import DCBot
-
 from web_app import save_bytes_to_gallery
 
-import logging
 logger = logging.getLogger(__name__)
 
 
@@ -24,6 +23,7 @@ def load_gallery_config(gallery_name):
 
 def start_web_gallery():
     import uvicorn
+
     from web_app import create_app
     host = os.getenv("WEB_HOST", "0.0.0.0")
     port = int(os.getenv("WEB_PORT", "8000"))
