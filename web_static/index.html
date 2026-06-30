@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>자짤 갤러리</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: #f5f5f5;
+      color: #111;
+    }
+    header {
+      background: #fff;
+      border-bottom: 1px solid #e5e5e5;
+      padding: 16px 24px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header .logo {
+      font-weight: 700;
+      font-size: 20px;
+    }
+    header .subtitle {
+      font-size: 13px;
+      color: #767676;
+      margin-left: 8px;
+    }
+    header .actions button {
+      background: #e60023;
+      color: #fff;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 24px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    header .actions button:hover { background: #ad001b; }
+    .masonry {
+      column-count: 5;
+      column-gap: 16px;
+      padding: 16px 24px;
+    }
+    @media (max-width: 1200px) { .masonry { column-count: 4; } }
+    @media (max-width: 900px)  { .masonry { column-count: 3; } }
+    @media (max-width: 600px)  { .masonry { column-count: 2; } }
+
+    .card {
+      break-inside: avoid;
+      margin-bottom: 16px;
+      background: #fff;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+      transition: transform .15s ease, box-shadow .15s ease;
+      position: relative;
+    }
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 14px rgba(0,0,0,0.08);
+    }
+    .card img {
+      width: 100%;
+      display: block;
+    }
+    .card .meta {
+      padding: 10px 12px;
+      font-size: 13px;
+      color: #333;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .card .meta .time {
+      color: #767676;
+      font-size: 12px;
+    }
+    .empty {
+      text-align: center;
+      padding: 60px 24px;
+      color: #767676;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <span class="logo">자짤 갤러리</span>
+      <span class="subtitle">DCInside 자짤 피드</span>
+    </div>
+    <div class="actions">
+      <button onclick="scrollToTop()">맨 위로</button>
+    </div>
+  </header>
+  <main id="gallery" class="masonry"></main>
+
+  <script>
+    const gallery = document.getElementById('gallery');
+    const urls = [];
+
+    function timeAgo(epoch) {
+      const diff = Math.floor((Date.now() / 1000) - epoch);
+      if (diff < 60) return '방금';
+      if (diff < 3600) return `${Math.floor(diff / 60)}분 전`;
+      if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`;
+      return `${Math.floor(diff / 86400)}일 전`;
+    }
+
+    function render(items) {
+      if (!items.length) {
+        gallery.innerHTML = '<div class="empty">아직 업로드된 자짤이 없습니다. 봇이 새 이미지를 수집하기 시작하면 여기에 표시됩니다.</div>';
+        return;
+      }
+      gallery.innerHTML = items.map(it => `
+        <article class="card">
+          <img src="${it.url}" alt="${escapeHtml(it.title || '자짤')}" loading="lazy" />
+          <div class="meta">
+            <span>${escapeHtml(it.title || '자짤')}</span>
+            <span class="time">${timeAgo(it.created_at)}</span>
+          </div>
+        </article>
+      `).join('');
+    }
+
+    function escapeHtml(text) {
+      const d = document.createElement('div');
+      d.textContent = text;
+      return d.innerHTML;
+    }
+
+    async function loadFeed() {
+      try {
+        const res = await fetch(`/feed?limit=${encodeURIComponent(document.getElementById('limit')?.value || '60')}`);
+        const data = await res.json();
+        render(data);
+      } catch (e) {
+        console.error('feed load failed', e);
+      }
+    }
+
+    function scrollToTop() {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // 초기 로드 및 주기적 갱신 (ephemeral 피드 → TTL 경과 시 자동 삭제)
+    loadFeed();
+    setInterval(loadFeed, 30000);
+  </script>
+</body>
+</html>
