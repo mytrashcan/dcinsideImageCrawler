@@ -77,8 +77,11 @@ class MessageSender:
         buffer.seek(0)
         return buffer
 
-    async def send_to_discord(self, channel, title, image_buffer, filename):
-        """디스코드로 이미지 전송 (413 시 재압축 후 1회 재시도)"""
+    async def send_to_discord(self, channel, title, image_buffer, filename, url=None):
+        """디스코드로 이미지 전송 (413 시 재압축 후 1회 재시도)
+
+        url이 주어지면 임베드 제목이 해당 게시글로 가는 하이퍼링크가 된다.
+        """
         try:
             if not self.validate_image_buffer(image_buffer):
                 logger.error("Discord 전송 취소: 이미지 검증 실패")
@@ -86,6 +89,7 @@ class MessageSender:
 
             embed = discord.Embed(
                 title=title,
+                url=url,
                 color=0xFF5733
             )
             embed.set_image(url=f"attachment://{filename}")

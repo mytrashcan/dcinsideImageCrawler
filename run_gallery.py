@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import sys
 
 from Module.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TOKEN, get_discord_intents, validate_required_env
@@ -29,6 +30,14 @@ async def main(gallery_name):
         telegram_chat_id=TELEGRAM_CHAT_ID,
         intents=intents,
     )
+
+    # WEB_GALLERY=1 이면 보낸 이미지를 공유 웹 갤러리 디렉터리에도 적재한다.
+    # (run_web_server.py가 이 디렉터리를 읽어 한 페이지에 모아 보여줌)
+    if os.getenv("WEB_GALLERY") == "1":
+        from web_app import attach_web_gallery
+
+        attach_web_gallery(bot.message_sender)
+
     await bot.run_bot()
 
 if __name__ == "__main__":

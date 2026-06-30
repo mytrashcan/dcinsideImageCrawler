@@ -48,12 +48,14 @@ class DCBot(discord.Client):
 
         for i, (discord_buffer, telegram_buffer, filename, is_gif) in enumerate(images):
             title = post['title'] if i == 0 else ""
+            # 제목이 있는 첫 이미지에만 게시글 하이퍼링크를 건다 (제목 없는 임베드엔 링크가 표시되지 않음)
+            link = post['link'] if i == 0 else None
 
             for channel_id in self.channel_ids:
                 channel = self.get_channel(int(channel_id))
                 if channel:
                     await self.message_sender.send_to_discord(
-                        channel, title, discord_buffer, filename
+                        channel, title, discord_buffer, filename, link
                     )
                     discord_buffer.seek(0)
 
