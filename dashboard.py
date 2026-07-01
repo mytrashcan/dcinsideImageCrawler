@@ -118,10 +118,18 @@ def _services_panel(health, services):
     launcher = Text("● 실행중", style="green") if "launcher" in services else Text("○ 꺼짐", style="dim")
     websvc = Text("● 실행중", style="green") if "web" in services else Text("○ 꺼짐", style="dim")
 
+    if health and health.get("maintenance"):
+        maint = Text("🛠 점검중 (down)", style="bold yellow")
+    elif health and health.get("ok"):
+        maint = Text("정상 운영", style="green")
+    else:
+        maint = Text("-", style="dim")
+
     t.add_row("웹 서버", web)
     t.add_row("주소", f"[link={BASE}]{BASE}[/]")
     t.add_row("피드 이미지", items)
     t.add_row("TTL", ttl)
+    t.add_row("운영 상태", maint)
     t.add_row("launcher", launcher)
     t.add_row("web process", websvc)
     return Panel(t, title="[bold]서비스 상태", border_style=ROSE, width=42)

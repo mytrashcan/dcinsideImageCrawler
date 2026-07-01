@@ -28,6 +28,7 @@ DOM="gui/$(id -u)"
 TUNNEL="${DC_TUNNEL:-dcgallery}"
 WEB_PORT="${WEB_PORT:-8000}"
 STATIC_DIR="$ROOT/web_static"
+MAINT="$ROOT/.maintenance"   # 존재하면 웹 서버가 점검 페이지를 보여줌
 
 C_LABEL="win.dcselfie.crawler"
 W_LABEL="win.dcselfie.web"
@@ -126,7 +127,16 @@ cmd_status() {
   if curl -s -o /dev/null -w '' "http://127.0.0.1:$WEB_PORT/healthz" 2>/dev/null; then
     echo "web: http://127.0.0.1:$WEB_PORT  →  https://dcselfie.win"
   fi
+  if [ -f "$MAINT" ]; then
+    echo "🛠  점검 모드: ON (사이트에 점검 페이지 노출 중 — 'up'으로 해제)"
+  else
+    echo "🟢 점검 모드: OFF (정상 운영)"
+  fi
 }
+
+# 긴급 점검 on/off (웹 서버 재시작 불필요, 즉시 반영)
+cmd_down() { touch "$MAINT"; echo "🛠  점검 모드 ON — https://dcselfie.win 에 점검 페이지가 표시됩니다."; }
+cmd_up()   { rm -f "$MAINT"; echo "🟢 점검 모드 OFF — 사이트 정상 운영."; }
 
 cmd_logs() { tail -n 40 -F "$LOGS"/crawler.log "$LOGS"/web.log "$LOGS"/tunnel.log 2>/dev/null; }
 cmd_dash() { shift || true; exec "$PY" "$ROOT/dashboard.py" "$@"; }
@@ -137,8 +147,10 @@ case "${1:-}" in
   stop)      cmd_stop ;;
   restart)   cmd_restart ;;
   status)    cmd_status ;;
+  down)      cmd_down ;;
+  up)        cmd_up ;;
   logs)      cmd_logs ;;
   dash)      cmd_dash "$@" ;;
   uninstall) cmd_uninstall ;;
-  *) echo "사용법: $0 {install|start|stop|restart|status|logs|dash|uninstall}"; exit 1 ;;
+  *) echo "사용법: $0 {install|start|stop|restart|status|down|up|logs|dash|uninstall}"; exit 1 ;;
 esac

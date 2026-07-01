@@ -277,6 +277,17 @@ def _ts_siteverify(token: str, remoteip: str) -> bool:
         return False
 
 
+# ── 긴급 점검(서버 닫기) 모드 ──
+# 플래그 파일이 존재하거나 WEB_MAINTENANCE=1 이면 점검 페이지를 보여준다.
+# dcselfie.sh down/up 으로 토글(웹 서버 재시작 없이 즉시 반영).
+def _maintenance_file() -> Path:
+    return Path(os.getenv("WEB_MAINTENANCE_FILE", str(_static_dir().parent / ".maintenance")))
+
+
+def _maintenance_on() -> bool:
+    return os.getenv("WEB_MAINTENANCE") == "1" or _maintenance_file().exists()
+
+
 def create_app() -> FastAPI:
     static_dir = _static_dir()
     _upload_dir()  # 정적 마운트 전에 디렉터리 보장
@@ -302,14 +313,25 @@ def create_app() -> FastAPI:
             resp.headers["Cache-Control"] = "no-store"
         return resp
 
+    def _maintenance_response() -> HTMLResponse:
+        m = static_dir / "maintenance.html"
+        body = m.read_text(encoding="utf-8") if m.exists() else "<h1>잠시 점검 중입니다</h1>"
+        return HTMLResponse(body, status_code=503, headers={"Retry-After": "3600"})
+
     @app.get("/", response_class=HTMLResponse)
     async def index():
+        if _maintenance_on():
+            return _maintenance_response()
         idx = static_dir / "index.html"
         if not idx.exists():
             return HTMLResponse("<h1>Gallery starting...</h1>")
         html = idx.read_text(encoding="utf-8")
         html = html.replace("{{TURNSTILE_SITEKEY}}", _ts_sitekey() if _ts_enabled() else "")
         return HTMLResponse(html)
+
+    @app.get("/policy", response_class=HTMLResponse)
+    async def policy():
+        return _page("policy.html")
 
     @app.get("/privacy", response_class=HTMLResponse)
     async def privacy():
@@ -332,6 +354,8 @@ def create_app() -> FastAPI:
 
     @app.get("/feed")
     async def feed(request: Request, limit: int = Query(60, ge=1, le=200)):
+        if _maintenance_on() and request.headers.get("cf-connecting-ip"):
+            return JSONResponse({"error": "maintenance"}, status_code=503)
         # Cloudflare를 거친 공개 요청(cf-connecting-ip 존재)만 Turnstile 통과를 요구한다.
         # 로컬 직접 접근(대시보드 등)은 헤더가 없어 그대로 허용.
         if _ts_enabled() and request.headers.get("cf-connecting-ip"):
@@ -367,6 +391,11 @@ def create_app() -> FastAPI:
     @app.get("/healthz")
     async def healthz():
         items = snapshot(_max_items())
-        return JSONResponse({"ok": True, "items": len(items), "ttl": _ttl()})
+        return JSONResponse({
+            "ok": True,
+            "items": len(items),
+            "ttl": _ttl(),
+            "maintenance": _maintenance_on(),
+        })
 
     return app
