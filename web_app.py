@@ -94,6 +94,20 @@ def _is_duplicate(filename: str) -> bool:
     return False
 
 
+def _image_size(data: bytes) -> tuple[int, int]:
+    """이미지의 (width, height). 프론트가 로드 전에 카드 높이를 예약해
+    masonry 컬럼이 이미지 로딩 중에 뒤틀리지 않게 한다. 실패 시 (0, 0)."""
+    try:
+        import io
+
+        from PIL import Image
+
+        with Image.open(io.BytesIO(data)) as img:
+            return img.width, img.height
+    except Exception:
+        return 0, 0
+
+
 def _make_thumbnail(data: bytes, name: str) -> bool:
     """카드용 축소 이미지를 thumbs/<name>으로 생성한다 (같은 확장자 유지 → content-type 일치).
 
@@ -141,7 +155,9 @@ def save_bytes_to_gallery(data: bytes, filename: str, title: str = "", link: str
     final = up / name
     tmp = up / f"{name}.part"
     created = time.time()
-    meta = {"filename": filename or name, "title": title, "link": link or "", "created_at": created}
+    w, h = _image_size(data)
+    meta = {"filename": filename or name, "title": title, "link": link or "",
+            "created_at": created, "w": w, "h": h}
     try:
         tmp.write_bytes(data)
         (up / f"{name}.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
@@ -157,16 +173,18 @@ def save_bytes_to_gallery(data: bytes, filename: str, title: str = "", link: str
 
 def _read_meta(up: Path, name: str, mtime: float):
     sidecar = up / f"{name}.json"
-    created, title, link, likes = mtime, "", "", 0
+    created, title, link, likes, w, h = mtime, "", "", 0, 0, 0
     try:
         meta = json.loads(sidecar.read_text(encoding="utf-8"))
         created = float(meta.get("created_at", mtime))
         title = meta.get("title", "") or ""
         link = meta.get("link", "") or ""
         likes = int(meta.get("likes", 0))
+        w = int(meta.get("w", 0))
+        h = int(meta.get("h", 0))
     except (OSError, ValueError, TypeError):
         pass
-    return created, title, link, likes
+    return created, title, link, likes, w, h
 
 
 def _remaining_ttl(name: str) -> int:
@@ -179,7 +197,7 @@ def _remaining_ttl(name: str) -> int:
     except OSError:
         _remove([thumb, up / f"{name}.json"])  # 원본이 사라진 고아 썸네일/사이드카 정리
         return -1
-    created, _, _, _ = _read_meta(up, name, mtime)
+    created = _read_meta(up, name, mtime)[0]
     remaining = int(created + _ttl() - time.time())
     if remaining > 0:
         return remaining
@@ -230,7 +248,7 @@ def snapshot(limit: int = 120) -> list[dict]:
             mtime = p.stat().st_mtime
         except OSError:
             continue
-        created, title, link, likes = _read_meta(up, p.name, mtime)
+        created, title, link, likes, w, h = _read_meta(up, p.name, mtime)
         if created < cutoff:
             remove += [p, up / f"{p.name}.json", thumbs / p.name]
             continue
@@ -243,6 +261,9 @@ def snapshot(limit: int = 120) -> list[dict]:
             "title": title,
             "link": link,
             "likes": likes,
+            # 원본 치수: 프론트가 이미지 로드 전에 카드 높이를 예약해 masonry 뒤틀림 방지
+            "w": w,
+            "h": h,
             "created_at": created,
         })
     items.sort(key=lambda it: it["created_at"], reverse=True)
