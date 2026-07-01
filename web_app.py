@@ -24,7 +24,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
@@ -351,6 +351,23 @@ def create_app() -> FastAPI:
         if f.exists():
             return PlainTextResponse(f.read_text(encoding="utf-8"))
         return PlainTextResponse("", status_code=404)
+
+    # 브라우저가 루트 경로로 직접 요청하는 파비콘들. 내용이 안 바뀌므로 캐시 헤더 부여.
+    for _fname, _mime in (
+        ("favicon.ico", "image/x-icon"),
+        ("favicon-16x16.png", "image/png"),
+        ("favicon-32x32.png", "image/png"),
+        ("apple-touch-icon.png", "image/png"),
+    ):
+        def _make_favicon_route(fname=_fname, mime=_mime):
+            async def _serve():
+                f = static_dir / fname
+                if not f.exists():
+                    return PlainTextResponse("", status_code=404)
+                return FileResponse(f, media_type=mime, headers={"Cache-Control": "public, max-age=604800"})
+            return _serve
+
+        app.add_api_route(f"/{_fname}", _make_favicon_route(), methods=["GET"])
 
     @app.get("/feed")
     async def feed(request: Request, limit: int = Query(60, ge=1, le=200)):
