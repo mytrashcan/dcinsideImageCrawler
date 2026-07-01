@@ -40,6 +40,18 @@ def _upload_dir() -> Path:
     return d
 
 
+def _thumb_dir() -> Path:
+    # snapshot()의 iterdir()는 파일만 보므로 하위 디렉터리의 썸네일은 피드에 중복 등재되지 않는다.
+    d = _upload_dir() / "thumbs"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _thumb_width() -> int:
+    """카드용 썸네일 최대 폭(px). 0이면 썸네일 생성 비활성화."""
+    return int(os.getenv("WEB_THUMB_WIDTH", "480"))
+
+
 def _ttl() -> int:
     return int(os.getenv("WEB_IMAGE_TTL_SECONDS", str(3 * 60 * 60)))
 
@@ -82,6 +94,39 @@ def _is_duplicate(filename: str) -> bool:
     return False
 
 
+def _make_thumbnail(data: bytes, name: str) -> bool:
+    """카드용 축소 이미지를 thumbs/<name>으로 생성한다 (같은 확장자 유지 → content-type 일치).
+
+    전송량을 줄이는 최적화일 뿐이므로 어떤 실패도 피드 적재를 막지 않는다(best-effort).
+    GIF/애니메이션은 움직임이 사라지므로 건너뛰고, 원본이 이미 충분히 작아도 건너뛴다.
+    """
+    max_w = _thumb_width()
+    if max_w <= 0 or name.lower().endswith(".gif"):
+        return False
+    try:
+        import io
+
+        from PIL import Image
+
+        img = Image.open(io.BytesIO(data))
+        if getattr(img, "is_animated", False) or img.width <= max_w:
+            return False
+        img.load()
+        img.thumbnail((max_w, max_w * 4), Image.LANCZOS)
+        ext = os.path.splitext(name)[1].lower()
+        if ext in (".jpg", ".jpeg") and img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        dest = _thumb_dir() / name
+        tmp = dest.with_suffix(dest.suffix + ".part")
+        fmt = {"jpg": "JPEG", "jpeg": "JPEG", "png": "PNG", "webp": "WEBP"}[ext.lstrip(".")]
+        save_kwargs = {"quality": 80} if fmt in ("JPEG", "WEBP") else {"optimize": True}
+        img.save(tmp, format=fmt, **save_kwargs)  # .part 확장자에선 포맷 추론이 안 되므로 명시
+        tmp.rename(dest)  # 부분 기록 노출 방지
+        return True
+    except Exception:
+        return False
+
+
 def save_bytes_to_gallery(data: bytes, filename: str, title: str = "", link: str = "") -> dict:
     """이미지 바이트를 공유 갤러리 디렉터리에 기록한다. (크롤러 프로세스에서 호출)
 
@@ -104,7 +149,10 @@ def save_bytes_to_gallery(data: bytes, filename: str, title: str = "", link: str
     except OSError:
         _remove([tmp, up / f"{name}.json"])
         return {}
-    return {"id": name, "url": f"/static/images/{name}", **meta}
+    has_thumb = _make_thumbnail(data, name)
+    item = {"id": name, "url": f"/static/images/{name}", **meta}
+    item["thumb"] = f"/static/images/thumbs/{name}" if has_thumb else item["url"]
+    return item
 
 
 def _read_meta(up: Path, name: str, mtime: float):
@@ -122,18 +170,20 @@ def _read_meta(up: Path, name: str, mtime: float):
 
 
 def _remaining_ttl(name: str) -> int:
-    """이미지의 남은 TTL(초)을 반환한다. 만료됐으면 파일·사이드카를 삭제하고 -1."""
+    """이미지의 남은 TTL(초)을 반환한다. 만료됐으면 파일·사이드카·썸네일을 삭제하고 -1."""
     up = _upload_dir()
     image = up / name
+    thumb = _thumb_dir() / name
     try:
         mtime = image.stat().st_mtime
     except OSError:
+        _remove([thumb, up / f"{name}.json"])  # 원본이 사라진 고아 썸네일/사이드카 정리
         return -1
     created, _, _, _ = _read_meta(up, name, mtime)
     remaining = int(created + _ttl() - time.time())
     if remaining > 0:
         return remaining
-    _remove([image, up / f"{name}.json"])
+    _remove([image, up / f"{name}.json", thumb])
     return -1
 
 
@@ -168,6 +218,7 @@ def like_image(image_id: str):
 # snapshot은 웹 서버 프로세스 1개에서만 호출되므로 별도 프로세스 락은 불필요하다.
 def snapshot(limit: int = 120) -> list[dict]:
     up = _upload_dir()
+    thumbs = _thumb_dir()
     cutoff = time.time() - _ttl()
     maxn = _max_items()
     items = []
@@ -181,12 +232,14 @@ def snapshot(limit: int = 120) -> list[dict]:
             continue
         created, title, link, likes = _read_meta(up, p.name, mtime)
         if created < cutoff:
-            remove.append(p)
-            remove.append(up / f"{p.name}.json")
+            remove += [p, up / f"{p.name}.json", thumbs / p.name]
             continue
+        url = f"/static/images/{p.name}"
         items.append({
             "id": p.name,
-            "url": f"/static/images/{p.name}",
+            "url": url,
+            # 카드용 축소 이미지(전송량↓). 썸네일이 없는 이미지(GIF/소형/생성실패)는 원본 폴백.
+            "thumb": f"/static/images/thumbs/{p.name}" if (thumbs / p.name).is_file() else url,
             "title": title,
             "link": link,
             "likes": likes,
@@ -195,8 +248,7 @@ def snapshot(limit: int = 120) -> list[dict]:
     items.sort(key=lambda it: it["created_at"], reverse=True)
     if len(items) > maxn:
         for it in items[maxn:]:
-            remove.append(up / it["id"])
-            remove.append(up / f"{it['id']}.json")
+            remove += [up / it["id"], up / f"{it['id']}.json", thumbs / it["id"]]
         items = items[:maxn]
     _remove(remove)
     return items[: min(limit, len(items))]
@@ -322,6 +374,8 @@ def create_app() -> FastAPI:
         path = request.url.path
         remaining = 0
         if path.startswith("/static/images/"):
+            # 원본(/static/images/<id>)과 썸네일(/static/images/thumbs/<id>) 모두
+            # 마지막 세그먼트가 원본 id이므로, 썸네일은 원본의 남은 TTL을 그대로 상속한다.
             image_id = path.rsplit("/", 1)[-1]
             remaining = _remaining_ttl(image_id) if _ID_RE.match(image_id or "") else -1
             if remaining <= 0:

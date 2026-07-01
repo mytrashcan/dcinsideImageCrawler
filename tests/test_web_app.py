@@ -70,3 +70,61 @@ def test_direct_image_url_cache_lifetime_shrinks_as_image_ages(monkeypatch, tmp_
     assert response.status_code == 200
     max_age = int(response.headers["cache-control"].split("max-age=")[1].split(",")[0])
     assert max_age <= 600
+
+
+def _big_jpeg(width=1200, height=800) -> bytes:
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (width, height), "#336699").save(buf, format="JPEG", quality=95)
+    return buf.getvalue()
+
+
+def test_large_image_gets_thumbnail_and_feed_prefers_it(monkeypatch, tmp_path):
+    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
+    item = save_bytes_to_gallery(_big_jpeg(), "big.jpg", "title", "https://example.com")
+
+    assert item["thumb"] == f"/static/images/thumbs/{item['id']}"
+    thumb_path = tmp_path / "web_static" / "images" / "thumbs" / item["id"]
+    original_path = tmp_path / "web_static" / "images" / item["id"]
+    assert thumb_path.is_file()
+    # 전송량 최적화가 목적이므로 썸네일이 원본보다 실제로 작아야 한다.
+    assert thumb_path.stat().st_size < original_path.stat().st_size
+
+    feed = client.get("/feed").json()
+    assert feed[0]["thumb"] == item["thumb"]
+
+    response = client.get(item["thumb"])
+    assert response.status_code == 200
+    # 썸네일도 원본과 같은 '남은 TTL' 캐시 정책을 상속한다.
+    max_age = int(response.headers["cache-control"].split("max-age=")[1].split(",")[0])
+    assert 0 < max_age <= 3600
+
+
+def test_small_image_skips_thumbnail_and_falls_back_to_original(monkeypatch, tmp_path):
+    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
+    item = save_bytes_to_gallery(PNG_BYTES, "tiny.png", "title", "")
+
+    assert item["thumb"] == item["url"]
+    assert not (tmp_path / "web_static" / "images" / "thumbs" / item["id"]).exists()
+    feed = client.get("/feed").json()
+    assert feed[0]["thumb"] == item["url"]
+
+
+def test_expired_image_deletes_thumbnail_too(monkeypatch, tmp_path):
+    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
+    item = save_bytes_to_gallery(_big_jpeg(), "big-expired.jpg", "title", "")
+
+    thumb_path = tmp_path / "web_static" / "images" / "thumbs" / item["id"]
+    assert thumb_path.is_file()
+
+    sidecar = tmp_path / "web_static" / "images" / f"{item['id']}.json"
+    meta = json.loads(sidecar.read_text(encoding="utf-8"))
+    meta["created_at"] = time.time() - 7200
+    sidecar.write_text(json.dumps(meta), encoding="utf-8")
+
+    assert client.get(item["thumb"]).status_code == 404
+    assert not thumb_path.exists()
+    assert not (tmp_path / "web_static" / "images" / item["id"]).exists()
