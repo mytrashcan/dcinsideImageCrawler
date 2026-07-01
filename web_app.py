@@ -121,18 +121,20 @@ def _read_meta(up: Path, name: str, mtime: float):
     return created, title, link, likes
 
 
-def _is_expired(name: str) -> bool:
+def _remaining_ttl(name: str) -> int:
+    """이미지의 남은 TTL(초)을 반환한다. 만료됐으면 파일·사이드카를 삭제하고 -1."""
     up = _upload_dir()
     image = up / name
     try:
         mtime = image.stat().st_mtime
     except OSError:
-        return True
+        return -1
     created, _, _, _ = _read_meta(up, name, mtime)
-    if created >= time.time() - _ttl():
-        return False
+    remaining = int(created + _ttl() - time.time())
+    if remaining > 0:
+        return remaining
     _remove([image, up / f"{name}.json"])
-    return True
+    return -1
 
 
 # 이미지 id는 uuid4().hex(32 hex) + 허용 확장자. 경로 조작/임의 파일 접근 방지용 검증.
@@ -318,14 +320,18 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def cache_control(request, call_next):
         path = request.url.path
+        remaining = 0
         if path.startswith("/static/images/"):
             image_id = path.rsplit("/", 1)[-1]
-            if not _ID_RE.match(image_id or "") or _is_expired(image_id):
+            remaining = _remaining_ttl(image_id) if _ID_RE.match(image_id or "") else -1
+            if remaining <= 0:
+                # 만료(또는 잘못된 id): 404. no-store로 만료 응답 자체가 캐시되는 것도 방지.
                 return Response(status_code=404, headers={"Cache-Control": "no-store"})
         resp = await call_next(request)
         if path.startswith("/static/images/"):
-            # TTL after direct-link access must be enforced by origin, not by browser/CDN cache.
-            resp.headers["Cache-Control"] = "no-store"
+            # 캐시 수명 = 남은 TTL. CDN/브라우저가 정확히 만료 시점에 캐시를 버리므로
+            # TTL 지난 이미지가 캐시로 살아남지 않으면서도 엣지 캐싱(오리진 부하↓)은 유지된다.
+            resp.headers["Cache-Control"] = f"public, max-age={remaining}, immutable"
         elif path == "/feed" or path == "/":
             # 실시간 피드/페이지는 절대 캐시 금지 (캐시되면 새 자짤이 안 뜸)
             resp.headers["Cache-Control"] = "no-store"
