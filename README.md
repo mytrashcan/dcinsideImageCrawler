@@ -99,6 +99,8 @@ You can serve the collected images as a live, **ephemeral** web feed - a Pintere
 
 The feed is backed by the **filesystem**, so those multiple crawler processes can share one web page. Each crawler writes images (plus a small `.json` sidecar for title / post link / timestamp) into the shared `web_static/images/` directory, and a single web-server process lists that directory newest-first.
 
+To cut transfer size, each crawler also generates a **card thumbnail** (max width `WEB_THUMB_WIDTH`, default 480 px) into `web_static/images/thumbs/`, and the feed serves that instead of the original. GIFs, animations, and images already smaller than the limit skip thumbnailing and fall back to the original. Thumbnails inherit the original's remaining-TTL cache policy and are deleted together with it.
+
 ### All galleries on one page (with the launcher)
 
 Run the launcher with `WEB_GALLERY=1` so every crawler also writes to the shared gallery, and start one web server alongside it:
@@ -226,6 +228,7 @@ dcinsideImageCrawler/
 | `WEB_IMAGE_TTL_SECONDS` | env | 10800 (3h) | How long an image stays in the feed before it expires and is deleted |
 | `WEB_FEED_MAX_ITEMS` | env | 120 | Max images kept in the feed; older ones are pruned and deleted |
 | `WEB_STATIC_DIR` | env | `web_static` | Directory for the gallery page and temporary images |
+| `WEB_THUMB_WIDTH` | env | 480 | Max card-thumbnail width in px (`0` disables thumbnailing) |
 
 ## Development
 

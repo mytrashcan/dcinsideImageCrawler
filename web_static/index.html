@@ -279,7 +279,7 @@
       const heart = localStorage.getItem('liked_' + it.id) ? '♥' : '♡';
       article.innerHTML = `
         <div class="imgwrap">
-          <img src="${it.url}" alt="${escapeHtml(label)}" loading="lazy" />
+          <img src="${it.thumb || it.url}" alt="${escapeHtml(label)}" loading="lazy" />
         </div>
         <div class="meta">
           ${titleHtml}
