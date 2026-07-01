@@ -7,6 +7,12 @@
   python dashboard.py -i 1       # 갱신 주기 1초
 
 연결 대상 포트는 WEB_PORT(기본 8000), 호스트는 DASH_HOST(기본 127.0.0.1).
+
+원격(다른 기기, 예: 맥에서 OCI 서버) 모니터링:
+  DASH_BASE_URL=https://dcselfie.win python dashboard.py
+서비스 상태/최근 피드는 공개 API로 그대로 보이지만, 크롤러 프로세스(PID/메모리)는
+psutil이 로컬 프로세스만 읽을 수 있어 원격에서는 볼 수 없다 — 그건 SSH로 서버에
+들어가 이 스크립트를 직접 돌리거나 `./dcselfie.sh status`로 확인해야 한다.
 """
 import argparse
 import json
@@ -25,7 +31,9 @@ from rich.text import Text
 
 DASH_HOST = os.getenv("DASH_HOST", "127.0.0.1")
 PORT = int(os.getenv("WEB_PORT", "8000"))
-BASE = f"http://{DASH_HOST}:{PORT}"
+_REMOTE_URL = os.getenv("DASH_BASE_URL", "").strip().rstrip("/")
+BASE = _REMOTE_URL or f"http://{DASH_HOST}:{PORT}"
+REMOTE = bool(_REMOTE_URL)  # 원격(공개 API)이면 크롤러 프로세스는 이 기기에서 안 보임
 
 BANNER = r"""
  ___  ___ ___ __  __ ___    ___   _   _    _    ___ _____   __
@@ -46,9 +54,14 @@ def _galleries():
         return []
 
 
-def _fetch(path, timeout=2.0):
+_UA = "Mozilla/5.0 (compatible; dcselfie-dashboard/1.0)"
+
+
+def _fetch(path, timeout=2.0 if not REMOTE else 5.0):
+    # 원격(Cloudflare 경유)일 때 기본 urllib UA는 Bot Fight Mode에 막히므로 브라우저 UA를 흉내낸다.
+    req = urllib.request.Request(BASE + path, headers={"User-Agent": _UA})
     try:
-        with urllib.request.urlopen(BASE + path, timeout=timeout) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.load(r)
     except Exception:
         return None
@@ -115,9 +128,6 @@ def _services_panel(health, services):
         web = Text("● DOWN", style="bold red")
         items, ttl = "-", "-"
 
-    launcher = Text("● 실행중", style="green") if "launcher" in services else Text("○ 꺼짐", style="dim")
-    websvc = Text("● 실행중", style="green") if "web" in services else Text("○ 꺼짐", style="dim")
-
     if health and health.get("maintenance"):
         maint = Text("🛠 점검중 (down)", style="bold yellow")
     elif health and health.get("ok"):
@@ -130,8 +140,14 @@ def _services_panel(health, services):
     t.add_row("피드 이미지", items)
     t.add_row("TTL", ttl)
     t.add_row("운영 상태", maint)
-    t.add_row("launcher", launcher)
-    t.add_row("web process", websvc)
+
+    if REMOTE:
+        t.add_row("모드", Text("🌐 원격 (공개 API)", style="cyan"))
+    else:
+        launcher = Text("● 실행중", style="green") if "launcher" in services else Text("○ 꺼짐", style="dim")
+        websvc = Text("● 실행중", style="green") if "web" in services else Text("○ 꺼짐", style="dim")
+        t.add_row("launcher", launcher)
+        t.add_row("web process", websvc)
     return Panel(t, title="[bold]서비스 상태", border_style=ROSE, width=42)
 
 
@@ -158,6 +174,18 @@ def _crawlers_panel(crawlers):
     return Panel(table, title=title, border_style=ROSE)
 
 
+def _remote_note_panel():
+    msg = Text.from_markup(
+        "🌐 원격 모드입니다 — 크롤러 프로세스(PID/메모리/업타임)는 psutil이 "
+        "로컬 프로세스만 읽을 수 있어 여기서는 볼 수 없습니다.\n"
+        "서버에 직접 들어가서 확인하세요:\n\n"
+        "  [bold]ssh <서버> \"cd dcinsideImageCrawler && ./dcselfie.sh status\"[/]\n"
+        "  [bold]ssh <서버> \"cd dcinsideImageCrawler && python3 dashboard.py\"[/]",
+        style="grey62",
+    )
+    return Panel(msg, title="[bold]크롤러 (원격에서는 미지원)", border_style="grey39")
+
+
 def _recent_panel(feed):
     table = Table(expand=True, border_style="grey39")
     table.add_column("최근 자짤", style="bold", ratio=3, no_wrap=True)
@@ -175,17 +203,19 @@ def _recent_panel(feed):
 def render():
     health = _fetch("/healthz")
     feed = _fetch("/feed?limit=12") or []
-    crawlers, services = _scan_procs()
+    crawlers, services = ({}, {}) if REMOTE else _scan_procs()
 
     banner = Align.center(Text(BANNER, style=f"bold {ROSE}"))
-    clock = Align.center(Text(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), style="grey62"))
+    clock_label = datetime.now().strftime("%Y-%m-%d %H:%M:%S") + (f"   [{BASE}]" if REMOTE else "")
+    clock = Align.center(Text(clock_label, style="grey62"))
 
     top = Table.grid(expand=True)
     top.add_column(width=42)
     top.add_column(ratio=1)
     top.add_row(_services_panel(health, services), _recent_panel(feed))
 
-    return Group(banner, clock, Text(), top, Text(), _crawlers_panel(crawlers))
+    bottom = _remote_note_panel() if REMOTE else _crawlers_panel(crawlers)
+    return Group(banner, clock, Text(), top, Text(), bottom)
 
 
 def main():

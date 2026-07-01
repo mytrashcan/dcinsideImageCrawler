@@ -143,6 +143,14 @@ python dashboard.py -i 1     # custom refresh interval (seconds)
 
 It reads `/healthz` + `/feed` from the web server (`WEB_PORT`, default 8000) and scans running `launcher.py` / `run_gallery.py` processes via `psutil` - no extra wiring needed. Panels: service status (web up/down, feed size, TTL), per-gallery crawler status (PID / memory / uptime), and the most recent images.
 
+**Monitoring from another machine** (e.g. checking a Mac deployment from your Mac, or an OCI deployment remotely) works for the service-status and feed panels via the public API:
+
+```bash
+DASH_BASE_URL=https://dcselfie.win python dashboard.py
+```
+
+The crawler-process panel (PID/memory/uptime) can't be shown this way - `psutil` only sees processes on the machine it runs on - so it's replaced with an SSH hint. To see crawler status, run `./dcselfie.sh status` or `python dashboard.py` directly on the server (e.g. over SSH).
+
 ## Deploying the web gallery
 
 Two common setups:
