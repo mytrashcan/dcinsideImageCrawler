@@ -129,7 +129,7 @@ python run_web_gallery.py <gallery_name>
 | `/feed?limit=N` | JSON feed of recent items (`limit` 1-200, default 60) |
 | `/healthz` | Health check (`{ok, items, ttl}`) |
 
-> The server binds to `0.0.0.0:8000` by default so it is reachable from outside the host. There is no authentication - put it behind a reverse proxy / firewall, or set `WEB_HOST=127.0.0.1` if you only want local access. The image responses are intentionally served with `Cache-Control: no-store` so browsers/CDNs do not keep expired gallery images alive past the TTL.
+> The server binds to `0.0.0.0:8000` by default so it is reachable from outside the host. There is no authentication - put it behind a reverse proxy / firewall, or set `WEB_HOST=127.0.0.1` if you only want local access. Image responses are served with `Cache-Control: public, max-age=<remaining TTL>, immutable` - browsers/CDNs may cache each image, but only until its TTL expires, so expired gallery images never outlive the TTL in any cache while edge caching still offloads the origin.
 
 ### Terminal monitor
 
