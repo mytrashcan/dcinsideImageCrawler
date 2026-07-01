@@ -123,9 +123,18 @@
       box-shadow: 0 1px 2px rgba(0,0,0,0.05);
       transition: transform .15s ease, box-shadow .15s ease;
       position: relative;
+      /* GPU compositing hints: store the rounded white card on its own layer so the
+         lift+shadow transition does not flash a white outline. Stable across
+         Safari/Chrome/Firefox when combined with translateZ below. */
+      will-change: transform;
+      transform: translateZ(0);
+      -webkit-backface-visibility: hidden;
+              backface-visibility: hidden;
     }
     .card:hover {
-      transform: translateY(-2px);
+      /* Use translate3d so the browser keeps the card on the GPU layer it
+         pre-allocated (no re-rasterization during the 150ms transition). */
+      transform: translate3d(0, -2px, 0);
       box-shadow: 0 6px 14px rgba(0,0,0,0.08);
     }
     .card img {
