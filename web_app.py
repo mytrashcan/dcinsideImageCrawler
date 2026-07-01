@@ -24,7 +24,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
@@ -119,6 +119,20 @@ def _read_meta(up: Path, name: str, mtime: float):
     except (OSError, ValueError, TypeError):
         pass
     return created, title, link, likes
+
+
+def _is_expired(name: str) -> bool:
+    up = _upload_dir()
+    image = up / name
+    try:
+        mtime = image.stat().st_mtime
+    except OSError:
+        return True
+    created, _, _, _ = _read_meta(up, name, mtime)
+    if created >= time.time() - _ttl():
+        return False
+    _remove([image, up / f"{name}.json"])
+    return True
 
 
 # 이미지 id는 uuid4().hex(32 hex) + 허용 확장자. 경로 조작/임의 파일 접근 방지용 검증.
@@ -303,11 +317,15 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def cache_control(request, call_next):
-        resp = await call_next(request)
         path = request.url.path
         if path.startswith("/static/images/"):
-            # uuid URL이라 내용이 절대 안 바뀜 → 길게 캐시(CF 엣지가 이미지 서빙 부담을 가져감)
-            resp.headers["Cache-Control"] = "public, max-age=86400, immutable"
+            image_id = path.rsplit("/", 1)[-1]
+            if not _ID_RE.match(image_id or "") or _is_expired(image_id):
+                return Response(status_code=404, headers={"Cache-Control": "no-store"})
+        resp = await call_next(request)
+        if path.startswith("/static/images/"):
+            # TTL after direct-link access must be enforced by origin, not by browser/CDN cache.
+            resp.headers["Cache-Control"] = "no-store"
         elif path == "/feed" or path == "/":
             # 실시간 피드/페이지는 절대 캐시 금지 (캐시되면 새 자짤이 안 뜸)
             resp.headers["Cache-Control"] = "no-store"

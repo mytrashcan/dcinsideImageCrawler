@@ -93,7 +93,7 @@ No code changes required - just restart the launcher.
 
 You can serve the collected images as a live, **ephemeral** web feed - a Pinterest-style masonry grid at `http://<host>:8000/` that updates roughly in real time (the page polls every 5 seconds and only adds new cards). Post titles link back to the original DCInside post.
 
-**Nothing is stored permanently.** There is no database. Images are written to `web_static/images/` only as a temporary cache so the browser can load them, and each file is **deleted from disk** the moment it falls out of the feed - once it is older than the TTL (default 3 h) or pushed past the item cap. At most `WEB_FEED_MAX_ITEMS` images (default **120**) are kept; the 121st arrival deletes the oldest. Nothing accumulates.
+**Nothing is stored permanently.** There is no database. Images are written to `web_static/images/` only as a temporary cache so the browser can load them, and each file is **deleted from disk** the moment it falls out of the feed - once it is older than the TTL (default 3 h) or pushed past the item cap. Direct image URLs also enforce that TTL, so an expired `/static/images/<id>` link returns 404 even if nobody has opened `/feed` recently. At most `WEB_FEED_MAX_ITEMS` images (default **120**) are kept; the 121st arrival deletes the oldest. Nothing accumulates.
 
 > The bot's own Discord/Telegram delivery is fully in-memory (image bytes are sent and garbage-collected, never touching disk). The temporary files exist *only* to display the web gallery. A disk-backed cache is required because the launcher runs each gallery as a separate process, and the filesystem is the only shared store between them.
 
@@ -129,7 +129,7 @@ python run_web_gallery.py <gallery_name>
 | `/feed?limit=N` | JSON feed of recent items (`limit` 1-200, default 60) |
 | `/healthz` | Health check (`{ok, items, ttl}`) |
 
-> The server binds to `0.0.0.0:8000` by default so it is reachable from outside the host. There is no authentication - put it behind a reverse proxy / firewall, or set `WEB_HOST=127.0.0.1` if you only want local access.
+> The server binds to `0.0.0.0:8000` by default so it is reachable from outside the host. There is no authentication - put it behind a reverse proxy / firewall, or set `WEB_HOST=127.0.0.1` if you only want local access. The image responses are intentionally served with `Cache-Control: no-store` so browsers/CDNs do not keep expired gallery images alive past the TTL.
 
 ### Terminal monitor
 
