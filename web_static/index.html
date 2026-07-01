@@ -171,7 +171,31 @@
       user-select: none;
     }
     .card .imgwrap { position: relative; }
-    .card .imgwrap img { -webkit-user-select: none; user-select: none; }
+    .card .imgwrap img { -webkit-user-select: none; user-select: none; cursor: zoom-in; }
+    #lightbox {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      background: rgba(0, 0, 0, 0.88);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: zoom-out;
+    }
+    #lightbox[hidden] { display: none; }
+    #lightbox img {
+      max-width: 96vw;
+      max-height: 90vh;
+      object-fit: contain;
+      border-radius: 8px;
+    }
+    #lightbox .lb-hint {
+      color: rgba(255, 255, 255, 0.75);
+      font-size: 13px;
+      margin-top: 12px;
+      user-select: none;
+    }
     .heart-pop {
       position: absolute;
       top: 50%; left: 50%;
@@ -246,6 +270,10 @@
     <span>·</span>
     <span>© <span id="year"></span> dcselfie.win</span>
   </footer>
+  <div id="lightbox" hidden>
+    <img alt="원본 이미지" />
+    <div class="lb-hint">원본 화질 — 우클릭(길게 눌러)으로 복사·저장 · 클릭하면 닫힘</div>
+  </div>
   <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
 
   <script>
@@ -353,18 +381,50 @@
         .catch(() => {});
     }
 
+    // ── 원본 라이트박스 (이미지 클릭 → 원본 화질로 크게, 거기서 복사/저장) ──
+    const lightbox = document.getElementById('lightbox');
+    const lightboxImg = lightbox.querySelector('img');
+    let openTimer = null; // 더블클릭(좋아요) 판정을 기다렸다가 여는 지연 타이머
+
+    function openLightbox(id) {
+      lightboxImg.src = '/static/images/' + encodeURIComponent(id); // 썸네일이 아닌 원본
+      lightbox.hidden = false;
+      document.body.style.overflow = 'hidden';
+    }
+    function closeLightbox() {
+      lightbox.hidden = true;
+      lightboxImg.src = '';
+      document.body.style.overflow = '';
+    }
+    lightbox.addEventListener('click', closeLightbox);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+
+    gallery.addEventListener('click', e => {
+      if (!e.target.closest('.imgwrap')) return; // 제목/좋아요 등은 제외, 이미지 영역만
+      const card = e.target.closest('.card');
+      if (!card || !card.dataset.id) return;
+      clearTimeout(openTimer);
+      const id = card.dataset.id;
+      // 더블클릭이면 likeCard가 이 타이머를 취소하므로 라이트박스는 열리지 않는다
+      openTimer = setTimeout(() => openLightbox(id), 350);
+    });
+
     // 더블클릭 / 모바일 더블탭으로 좋아요
     gallery.addEventListener('dblclick', e => {
       const card = e.target.closest('.card');
-      if (card) likeCard(card);
+      if (card) { clearTimeout(openTimer); likeCard(card); }
     });
     let lastTap = 0, lastCard = null;
     gallery.addEventListener('touchend', e => {
       const card = e.target.closest('.card');
       if (!card) return;
       const now = Date.now();
-      if (now - lastTap < 300 && lastCard === card) { e.preventDefault(); likeCard(card); lastTap = 0; }
-      else { lastTap = now; lastCard = card; }
+      if (now - lastTap < 300 && lastCard === card) {
+        e.preventDefault();
+        clearTimeout(openTimer);
+        likeCard(card);
+        lastTap = 0;
+      } else { lastTap = now; lastCard = card; }
     });
 
     async function loadFeed() {
