@@ -183,3 +183,6 @@ serve_demo.py
 
 # 서비스 로그
 logs/
+
+# 점검 모드 플래그
+.maintenance
