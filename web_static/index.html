@@ -40,6 +40,9 @@
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
   <style>
     * { box-sizing: border-box; }
+    /* prepend는 대기열(새 자짤 버튼)로만 일어나므로 브라우저 스크롤 앵커링이 불필요하고,
+       켜져 있으면 버튼 클릭 후 맨 위로 점프를 되돌려버린다 */
+    html { overflow-anchor: none; }
     body {
       margin: 0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -101,23 +104,75 @@
       max-width: 160px;
     }
     header .actions select:focus { outline: 2px solid #e60023; border-color: transparent; }
+    header .nav-links { display: flex; align-items: center; gap: 16px; }
+    /* .actions button(빨간 알약)보다 구체성이 높아야 ☰가 민무늬로 렌더됨 */
+    header .actions button.menu-btn {
+      display: none;
+      background: none;
+      border: none;
+      color: #333;
+      font-size: 22px;
+      padding: 4px 8px;
+      cursor: pointer;
+      line-height: 1;
+      border-radius: 8px;
+    }
+    header .actions button.menu-btn:hover { background: none; color: #e60023; }
+    #newItemsBtn {
+      position: fixed;
+      top: 76px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 500;
+      background: #e60023;
+      color: #fff;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 24px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(230, 0, 35, 0.35);
+    }
+    #newItemsBtn:hover { background: #ad001b; }
     @media (max-width: 600px) {
       header { padding: 10px 14px; }
       header .logo { font-size: 18px; }
       header .subtitle { display: none; }
-      header .actions {
-        width: 100%;
-        justify-content: flex-start;
-        gap: 14px;
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
+      header .actions { gap: 10px; }
+      header .actions select { max-width: 130px; font-size: 13px; padding: 7px 9px; }
+      /* 링크들은 ☰ 드롭다운으로 접어 헤더가 옆으로 늘어나지 않게 함 */
+      header .actions button.menu-btn { display: block; }
+      header .nav-links {
+        display: none;
+        position: absolute;
+        top: 100%;
+        right: 10px;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0;
+        background: #fff;
+        border: 1px solid #e5e5e5;
+        border-radius: 12px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+        padding: 6px;
+        min-width: 170px;
       }
-      header .actions a { font-size: 13px; }
-      header .actions button {
-        margin-left: auto;
-        padding: 7px 14px;
-        font-size: 13px;
+      header .nav-links.open { display: flex; }
+      header .nav-links a, header .nav-links button {
+        padding: 11px 14px;
+        border-radius: 8px;
+        font-size: 14px;
+        text-align: left;
       }
+      header .nav-links a:hover { background: #f5f5f5; text-decoration: none; }
+      header .nav-links button {
+        background: none;
+        color: #e60023;
+        font-weight: 700;
+      }
+      header .nav-links button:hover { background: #f5f5f5; }
+      #newItemsBtn { top: 64px; }
     }
     footer {
       text-align: center;
@@ -278,13 +333,17 @@
       <select id="galleryFilter" title="갤러리 필터">
         <option value="">전체 갤러리</option>
       </select>
-      <a href="/request">갤러리 추가 요청</a>
-      <a href="/about">소개</a>
-      <a href="/privacy">개인정보처리방침</a>
-      <a href="/policy">콘텐츠·신고 정책</a>
-      <button onclick="scrollToTop()">맨 위로</button>
+      <div class="nav-links" id="navLinks">
+        <a href="/request">갤러리 추가 요청</a>
+        <a href="/about">소개</a>
+        <a href="/privacy">개인정보처리방침</a>
+        <a href="/policy">콘텐츠·신고 정책</a>
+        <button onclick="scrollToTop()">맨 위로</button>
+      </div>
+      <button class="menu-btn" id="menuBtn" aria-label="메뉴">☰</button>
     </nav>
   </header>
+  <button id="newItemsBtn" hidden>새 자짤 0개 ↑</button>
   <main id="gallery" class="masonry"></main>
   <footer>
     <a href="/request">갤러리 추가 요청</a>
@@ -391,22 +450,61 @@
       for (const el of cards.values()) applyFilter(el);
     });
 
+    // ── 새 자짤 대기열 ──
+    // 스크롤을 내려 구경 중일 때 새 카드가 끼어들면 masonry 전체가 밀리므로,
+    // 위에 있지 않으면 바로 반영하지 않고 모아뒀다가 "새 자짤 N개 ↑" 버튼으로 반영한다.
+    const newItemsBtn = document.getElementById('newItemsBtn');
+    let pendingItems = []; // 최신순 유지
+
+    function prependItems(list) {
+      for (let k = list.length - 1; k >= 0; k--) {
+        const el = makeCard(list[k]);
+        applyFilter(el);
+        gallery.prepend(el);
+        cards.set(list[k].id, el);
+      }
+    }
+
+    function flushPending() {
+      if (pendingItems.length) {
+        prependItems(pendingItems);
+        pendingItems = [];
+      }
+      newItemsBtn.hidden = true;
+    }
+
+    newItemsBtn.addEventListener('click', () => {
+      flushPending();
+      window.scrollTo(0, 0); // smooth는 이미지 로딩에 밀려 취소될 수 있어 즉시 점프
+    });
+    // 사용자가 직접 맨 위로 올라오면 자동 반영
+    window.addEventListener('scroll', () => {
+      if (window.scrollY <= 300 && pendingItems.length) flushPending();
+    }, { passive: true });
+
     function sync(items) {
       const ids = new Set(items.map(i => i.id));
       updateFilterOptions(items);
 
-      // 사라진(만료된) 이미지는 DOM에서 제거
+      // 사라진(만료된) 이미지는 DOM에서 제거 + 대기열에서도 제거
       for (const [id, el] of cards) {
         if (!ids.has(id)) { el.remove(); cards.delete(id); }
       }
+      pendingItems = pendingItems.filter(i => ids.has(i.id));
 
-      // 새 이미지만 추가 (피드는 최신순 → 오래된 새 항목부터 prepend 하면 최신이 맨 위)
-      const fresh = items.filter(i => !cards.has(i.id));
-      for (let k = fresh.length - 1; k >= 0; k--) {
-        const el = makeCard(fresh[k]);
-        applyFilter(el);
-        gallery.prepend(el);
-        cards.set(fresh[k].id, el);
+      // 새 이미지 (피드는 최신순 → 오래된 새 항목부터 prepend 하면 최신이 맨 위)
+      const pendingIds = new Set(pendingItems.map(i => i.id));
+      const fresh = items.filter(i => !cards.has(i.id) && !pendingIds.has(i.id));
+
+      if (cards.size === 0 || window.scrollY <= 300) {
+        // 첫 로드거나 위에 있으면 즉시 반영
+        prependItems([...fresh, ...pendingItems]);
+        pendingItems = [];
+        newItemsBtn.hidden = true;
+      } else if (fresh.length) {
+        pendingItems = [...fresh, ...pendingItems];
+        newItemsBtn.textContent = `새 자짤 ${pendingItems.length}개 ↑`;
+        newItemsBtn.hidden = false;
       }
 
       // 기존 카드의 '~분 전' + 좋아요 수 갱신 (다른 사람이 누른 것도 반영, 감소는 안 함)
@@ -519,6 +617,19 @@
     function scrollToTop() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
+
+    // ── 모바일 ☰ 메뉴 ──
+    const menuBtn = document.getElementById('menuBtn');
+    const navLinks = document.getElementById('navLinks');
+    menuBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      navLinks.classList.toggle('open');
+    });
+    // 메뉴 밖 클릭 또는 항목 선택 시 닫기
+    document.addEventListener('click', e => {
+      if (!navLinks.contains(e.target)) navLinks.classList.remove('open');
+    });
+    navLinks.addEventListener('click', () => navLinks.classList.remove('open'));
 
     // ── 초기 로드 + 5초마다 증분 갱신 (ephemeral 피드) ──
     let feedStarted = false;
