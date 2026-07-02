@@ -456,6 +456,8 @@ def create_app() -> FastAPI:
         ("favicon-32x32.png", "image/png"),
         ("apple-touch-icon.png", "image/png"),
         ("og-image.jpg", "image/jpeg"),  # 링크 공유 미리보기(Open Graph)
+        ("robots.txt", "text/plain"),    # Sitemap 참조 포함 (CF 관리형 robots와 병합됨)
+        ("sitemap.xml", "application/xml"),
     ):
         def _make_favicon_route(fname=_fname, mime=_mime):
             async def _serve():
@@ -466,6 +468,15 @@ def create_app() -> FastAPI:
             return _serve
 
         app.add_api_route(f"/{_fname}", _make_favicon_route(), methods=["GET"])
+
+    @app.get("/.well-known/security.txt", response_class=PlainTextResponse)
+    async def security_txt():
+        # RFC 9116: 보안 취약점 제보 연락처
+        f = static_dir / "security.txt"
+        if not f.exists():
+            return PlainTextResponse("", status_code=404)
+        return PlainTextResponse(f.read_text(encoding="utf-8"),
+                                 headers={"Cache-Control": "public, max-age=86400"})
 
     @app.get("/feed")
     async def feed(request: Request, limit: int = Query(60, ge=1, le=200)):
