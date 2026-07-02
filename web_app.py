@@ -455,7 +455,7 @@ def create_app() -> FastAPI:
         ("favicon-16x16.png", "image/png"),
         ("favicon-32x32.png", "image/png"),
         ("apple-touch-icon.png", "image/png"),
-        ("og-image.png", "image/png"),  # 링크 공유 미리보기(Open Graph)
+        ("og-image.jpg", "image/jpeg"),  # 링크 공유 미리보기(Open Graph)
     ):
         def _make_favicon_route(fname=_fname, mime=_mime):
             async def _serve():
