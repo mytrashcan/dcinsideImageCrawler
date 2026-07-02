@@ -36,7 +36,7 @@ async def main(gallery_name):
     if os.getenv("WEB_GALLERY") == "1":
         from web_app import attach_web_gallery
 
-        attach_web_gallery(bot.message_sender)
+        attach_web_gallery(bot.message_sender, gallery_name)
 
     await bot.run_bot()
 

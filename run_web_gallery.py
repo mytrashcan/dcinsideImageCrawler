@@ -52,7 +52,7 @@ async def main(gallery_name):
     web_thread.start()
 
     # dcbot은 건드리지 않고 센더만 감싸 웹 갤러리에 적재
-    attach_web_gallery(bot.message_sender)
+    attach_web_gallery(bot.message_sender, gallery_name)
 
     await bot.run_bot()
 

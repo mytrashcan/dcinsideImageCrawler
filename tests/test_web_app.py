@@ -138,3 +138,12 @@ def test_feed_exposes_image_dimensions(monkeypatch, tmp_path):
     # 프론트가 로드 전에 카드 높이를 예약할 수 있도록 원본 치수를 내려보낸다.
     assert feed[0]["w"] == 1200
     assert feed[0]["h"] == 800
+
+
+def test_feed_exposes_source_gallery(monkeypatch, tmp_path):
+    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
+    save_bytes_to_gallery(PNG_BYTES, "g.png", "title", "", gallery="stariload")
+
+    feed = client.get("/feed").json()
+    # 갤러리별 필터를 위해 출처 갤러리명을 내려보낸다 (미기록 이미지는 빈 문자열)
+    assert feed[0]["gallery"] == "stariload"

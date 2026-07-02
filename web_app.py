@@ -141,12 +141,13 @@ def _make_thumbnail(data: bytes, name: str) -> bool:
         return False
 
 
-def save_bytes_to_gallery(data: bytes, filename: str, title: str = "", link: str = "") -> dict:
+def save_bytes_to_gallery(data: bytes, filename: str, title: str = "", link: str = "", gallery: str = "") -> dict:
     """이미지 바이트를 공유 갤러리 디렉터리에 기록한다. (크롤러 프로세스에서 호출)
 
     이미지는 <uuid>.<ext>, 메타데이터는 <uuid>.<ext>.json 사이드카로 저장한다.
     부분 기록된 파일이 웹 서버에 노출되지 않도록 임시파일에 쓴 뒤 atomic rename 한다.
-    link이 있으면 피드에서 제목이 해당 게시글 하이퍼링크가 된다.
+    link이 있으면 피드에서 제목이 해당 게시글 하이퍼링크가 되고,
+    gallery(출처 갤러리명)는 피드의 갤러리별 필터에 쓰인다.
     """
     if _is_duplicate(filename):
         return {}
@@ -157,7 +158,7 @@ def save_bytes_to_gallery(data: bytes, filename: str, title: str = "", link: str
     created = time.time()
     w, h = _image_size(data)
     meta = {"filename": filename or name, "title": title, "link": link or "",
-            "created_at": created, "w": w, "h": h}
+            "gallery": gallery or "", "created_at": created, "w": w, "h": h}
     try:
         tmp.write_bytes(data)
         (up / f"{name}.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
@@ -171,20 +172,21 @@ def save_bytes_to_gallery(data: bytes, filename: str, title: str = "", link: str
     return item
 
 
-def _read_meta(up: Path, name: str, mtime: float):
-    sidecar = up / f"{name}.json"
-    created, title, link, likes, w, h = mtime, "", "", 0, 0, 0
+def _read_meta(up: Path, name: str, mtime: float) -> dict:
+    """사이드카 메타를 안전한 기본값과 함께 dict로 읽는다."""
+    out = {"created_at": mtime, "title": "", "link": "", "gallery": "", "likes": 0, "w": 0, "h": 0}
     try:
-        meta = json.loads(sidecar.read_text(encoding="utf-8"))
-        created = float(meta.get("created_at", mtime))
-        title = meta.get("title", "") or ""
-        link = meta.get("link", "") or ""
-        likes = int(meta.get("likes", 0))
-        w = int(meta.get("w", 0))
-        h = int(meta.get("h", 0))
+        meta = json.loads((up / f"{name}.json").read_text(encoding="utf-8"))
+        out["created_at"] = float(meta.get("created_at", mtime))
+        out["title"] = meta.get("title", "") or ""
+        out["link"] = meta.get("link", "") or ""
+        out["gallery"] = meta.get("gallery", "") or ""
+        out["likes"] = int(meta.get("likes", 0))
+        out["w"] = int(meta.get("w", 0))
+        out["h"] = int(meta.get("h", 0))
     except (OSError, ValueError, TypeError):
         pass
-    return created, title, link, likes, w, h
+    return out
 
 
 def _remaining_ttl(name: str) -> int:
@@ -197,7 +199,7 @@ def _remaining_ttl(name: str) -> int:
     except OSError:
         _remove([thumb, up / f"{name}.json"])  # 원본이 사라진 고아 썸네일/사이드카 정리
         return -1
-    created = _read_meta(up, name, mtime)[0]
+    created = _read_meta(up, name, mtime)["created_at"]
     remaining = int(created + _ttl() - time.time())
     if remaining > 0:
         return remaining
@@ -248,8 +250,8 @@ def snapshot(limit: int = 120) -> list[dict]:
             mtime = p.stat().st_mtime
         except OSError:
             continue
-        created, title, link, likes, w, h = _read_meta(up, p.name, mtime)
-        if created < cutoff:
+        meta = _read_meta(up, p.name, mtime)
+        if meta["created_at"] < cutoff:
             remove += [p, up / f"{p.name}.json", thumbs / p.name]
             continue
         url = f"/static/images/{p.name}"
@@ -258,13 +260,8 @@ def snapshot(limit: int = 120) -> list[dict]:
             "url": url,
             # 카드용 축소 이미지(전송량↓). 썸네일이 없는 이미지(GIF/소형/생성실패)는 원본 폴백.
             "thumb": f"/static/images/thumbs/{p.name}" if (thumbs / p.name).is_file() else url,
-            "title": title,
-            "link": link,
-            "likes": likes,
-            # 원본 치수: 프론트가 이미지 로드 전에 카드 높이를 예약해 masonry 뒤틀림 방지
-            "w": w,
-            "h": h,
-            "created_at": created,
+            # title/link/gallery/likes + w/h(로드 전 카드 높이 예약, masonry 뒤틀림 방지)
+            **{k: meta[k] for k in ("title", "link", "gallery", "likes", "w", "h", "created_at")},
         })
     items.sort(key=lambda it: it["created_at"], reverse=True)
     if len(items) > maxn:
@@ -275,11 +272,12 @@ def snapshot(limit: int = 120) -> list[dict]:
     return items[: min(limit, len(items))]
 
 
-def attach_web_gallery(message_sender) -> None:
+def attach_web_gallery(message_sender, gallery: str = "") -> None:
     """봇의 메시지 센더를 감싸, 디스코드/텔레그램으로 보낸 이미지를 웹 갤러리에도 적재한다.
 
     dcbot 코드는 건드리지 않는다. 디스코드가 먼저 전송되므로 title이 보존되고,
     프로세스 내 dedup으로 채널 수만큼/텔레그램 중복이 합쳐진다.
+    gallery는 이 크롤러가 담당하는 갤러리명(피드의 갤러리별 필터용).
     """
     original_discord = message_sender.send_to_discord
     original_telegram = message_sender.send_to_telegram
@@ -292,7 +290,7 @@ def attach_web_gallery(message_sender) -> None:
                 image_buffer.seek(0)
                 data = image_buffer.read()
                 if data:
-                    save_bytes_to_gallery(data, filename or "", title or "", url or "")
+                    save_bytes_to_gallery(data, filename or "", title or "", url or "", gallery)
             except (OSError, ValueError):
                 pass
 
@@ -306,7 +304,7 @@ def attach_web_gallery(message_sender) -> None:
             return await original_telegram(image_buffer, filename, is_gif, max_retries)
         finally:
             if data:
-                save_bytes_to_gallery(data, filename or "", "")
+                save_bytes_to_gallery(data, filename or "", "", "", gallery)
 
     message_sender.send_to_discord = discord_with_web
     message_sender.send_to_telegram = telegram_with_web
@@ -457,6 +455,7 @@ def create_app() -> FastAPI:
         ("favicon-16x16.png", "image/png"),
         ("favicon-32x32.png", "image/png"),
         ("apple-touch-icon.png", "image/png"),
+        ("og-image.png", "image/png"),  # 링크 공유 미리보기(Open Graph)
     ):
         def _make_favicon_route(fname=_fname, mime=_mime):
             async def _serve():
