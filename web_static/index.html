@@ -183,17 +183,21 @@
     footer a { color: #767676; text-decoration: none; }
     footer a:hover { color: #e60023; text-decoration: underline; }
     footer span { margin: 0 6px; }
+    /* CSS 다단 컬럼 대신 JS가 컬럼(.mcol)에 직접 분배하는 masonry.
+       사파리(WebKit)의 multicol+transform 배치 버그를 원천 회피하고,
+       최신 짤이 왼쪽 컬럼이 아니라 화면 상단 가로줄에 깔리게 된다. */
     .masonry {
-      column-count: 5;
-      column-gap: 16px;
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
       padding: 16px 24px;
     }
-    @media (max-width: 1200px) { .masonry { column-count: 4; } }
-    @media (max-width: 900px)  { .masonry { column-count: 3; } }
-    @media (max-width: 600px)  { .masonry { column-count: 2; } }
+    .masonry .mcol {
+      flex: 1 1 0;
+      min-width: 0;
+    }
 
     .card {
-      break-inside: avoid;
       margin-bottom: 16px;
       background: #fff;
       border-radius: 16px;
@@ -365,6 +369,46 @@
   <script>
     const gallery = document.getElementById('gallery');
     const cards = new Map(); // id -> card element (증분 렌더용)
+    let displayOrder = [];   // 화면에 배치된 카드 id, 최신순
+
+    // ── JS masonry ──
+    // CSS 다단 컬럼은 사파리(WebKit)에서 transform 있는 카드의 배치가 어긋나는
+    // 버그가 있어, 카드를 "가장 짧은 컬럼"에 직접 분배한다. w/h 메타로 높이를
+    // 예측하므로 이미지 로딩 전에도 배치가 확정적이다.
+    function colCount() {
+      const w = window.innerWidth;
+      return w <= 600 ? 2 : w <= 900 ? 3 : w <= 1200 ? 4 : 5;
+    }
+
+    function rebuildLayout() {
+      const n = colCount();
+      const cols = [], heights = [];
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < n; i++) {
+        const c = document.createElement('div');
+        c.className = 'mcol';
+        cols.push(c); heights.push(0); frag.appendChild(c);
+      }
+      const colW = Math.max(1, (gallery.clientWidth - 48 - 16 * (n - 1)) / n);
+      for (const id of displayOrder) {
+        const el = cards.get(id);
+        if (!el) continue;
+        let k = 0;
+        for (let i = 1; i < n; i++) if (heights[i] < heights[k]) k = i;
+        cols[k].appendChild(el); // 기존 노드 이동이라 이미지 재로딩 없음
+        if (!el.hidden) heights[k] += colW * (Number(el.dataset.ratio) || 1) + 62; // 62≈메타줄+여백
+      }
+      gallery.replaceChildren(frag);
+    }
+
+    let lastColCount = colCount();
+    let resizeTimer = null;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (colCount() !== lastColCount) { lastColCount = colCount(); rebuildLayout(); }
+      }, 150);
+    });
 
     function timeAgo(epoch) {
       const diff = Math.floor((Date.now() / 1000) - epoch);
@@ -394,6 +438,7 @@
       article.dataset.gallery = it.gallery || '';
       // 원본 치수로 로드 전에 자리를 예약 → lazy 이미지가 로드되며 컬럼이 뒤틀리는 것 방지
       const dim = (it.w > 0 && it.h > 0) ? `width="${it.w}" height="${it.h}"` : '';
+      article.dataset.ratio = (it.w > 0 && it.h > 0) ? (it.h / it.w) : 1; // masonry 높이 예측용
       // 썸네일 카드는 호버 시 원본으로 교체해 피드에서 바로 복사해도 원본 화질이 되게 함
       if (it.thumb && it.thumb !== it.url) article.dataset.fullSrc = it.url;
       article.innerHTML = `
@@ -448,6 +493,7 @@
       galleryFilter = filterSel.value;
       localStorage.setItem('galleryFilter', galleryFilter);
       for (const el of cards.values()) applyFilter(el);
+      rebuildLayout(); // 보이는 카드만으로 컬럼 높이 재분배
     });
 
     // ── 새 자짤 대기열 ──
@@ -457,12 +503,15 @@
     let pendingItems = []; // 최신순 유지
 
     function prependItems(list) {
-      for (let k = list.length - 1; k >= 0; k--) {
-        const el = makeCard(list[k]);
+      if (!list.length) return;
+      for (const it of list) {
+        if (cards.has(it.id)) continue;
+        const el = makeCard(it);
         applyFilter(el);
-        gallery.prepend(el);
-        cards.set(list[k].id, el);
+        cards.set(it.id, el);
       }
+      displayOrder = [...list.map(i => i.id), ...displayOrder]; // 최신순 유지
+      rebuildLayout(); // 최신 카드가 각 컬럼 상단(화면 상단 가로줄)에 깔림
     }
 
     function flushPending() {
@@ -486,10 +535,11 @@
       const ids = new Set(items.map(i => i.id));
       updateFilterOptions(items);
 
-      // 사라진(만료된) 이미지는 DOM에서 제거 + 대기열에서도 제거
+      // 사라진(만료된) 이미지는 DOM에서 제거 + 대기열/배치 순서에서도 제거
       for (const [id, el] of cards) {
         if (!ids.has(id)) { el.remove(); cards.delete(id); }
       }
+      displayOrder = displayOrder.filter(id => cards.has(id));
       pendingItems = pendingItems.filter(i => ids.has(i.id));
 
       // 새 이미지 (피드는 최신순 → 오래된 새 항목부터 prepend 하면 최신이 맨 위)
