@@ -10,6 +10,17 @@
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <meta name="description" content="DCInside 갤러리에서 모은 자짤(셀카·짤방)을 실시간으로 보여주는 핀터레스트형 피드. 일정 시간이 지나면 자동으로 사라집니다." />
 
+  <!-- Open Graph (디스코드/카톡 등 링크 공유 미리보기) -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="자짤 갤러리" />
+  <meta property="og:title" content="자짤 갤러리 · dcselfie.win" />
+  <meta property="og:description" content="DCInside 갤러리에서 모은 자짤을 실시간으로 보여주는 핀터레스트형 피드. 일정 시간이 지나면 사라집니다." />
+  <meta property="og:url" content="https://dcselfie.win/" />
+  <meta property="og:image" content="https://dcselfie.win/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-CTFS40BCB7"></script>
   <script>
@@ -78,6 +89,18 @@
     }
     header .actions a:hover { color: #e60023; text-decoration: underline; }
     header .actions button:hover { background: #ad001b; }
+    header .actions select {
+      font: inherit;
+      font-size: 14px;
+      padding: 8px 10px;
+      border: 1px solid #ddd;
+      border-radius: 18px;
+      background: #fff;
+      color: #333;
+      cursor: pointer;
+      max-width: 160px;
+    }
+    header .actions select:focus { outline: 2px solid #e60023; border-color: transparent; }
     @media (max-width: 600px) {
       header { padding: 10px 14px; }
       header .logo { font-size: 18px; }
@@ -252,6 +275,9 @@
       <span class="subtitle">DCInside 자짤 피드</span>
     </div>
     <nav class="actions">
+      <select id="galleryFilter" title="갤러리 필터">
+        <option value="">전체 갤러리</option>
+      </select>
       <a href="/request">갤러리 추가 요청</a>
       <a href="/about">소개</a>
       <a href="/privacy">개인정보처리방침</a>
@@ -306,6 +332,7 @@
         ? `<a class="title" href="${escapeHtml(it.link)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`
         : `<span class="title">${escapeHtml(label)}</span>`;
       const heart = localStorage.getItem('liked_' + it.id) ? '♥' : '♡';
+      article.dataset.gallery = it.gallery || '';
       // 원본 치수로 로드 전에 자리를 예약 → lazy 이미지가 로드되며 컬럼이 뒤틀리는 것 방지
       const dim = (it.w > 0 && it.h > 0) ? `width="${it.w}" height="${it.h}"` : '';
       // 썸네일 카드는 호버 시 원본으로 교체해 피드에서 바로 복사해도 원본 화질이 되게 함
@@ -333,8 +360,40 @@
       }
     }
 
+    // ── 갤러리별 필터 ──
+    const filterSel = document.getElementById('galleryFilter');
+    let galleryFilter = localStorage.getItem('galleryFilter') || '';
+
+    function applyFilter(el) {
+      el.hidden = !!(galleryFilter && el.dataset.gallery !== galleryFilter);
+    }
+
+    function updateFilterOptions(items) {
+      const known = new Set([...filterSel.options].map(o => o.value));
+      for (const g of new Set(items.map(i => i.gallery).filter(Boolean))) {
+        if (!known.has(g)) {
+          const opt = document.createElement('option');
+          opt.value = g;
+          opt.textContent = g;
+          filterSel.appendChild(opt);
+        }
+      }
+      // 저장된 필터가 옵션에 생기면 선택 상태 복원
+      if (galleryFilter && filterSel.value !== galleryFilter &&
+          [...filterSel.options].some(o => o.value === galleryFilter)) {
+        filterSel.value = galleryFilter;
+      }
+    }
+
+    filterSel.addEventListener('change', () => {
+      galleryFilter = filterSel.value;
+      localStorage.setItem('galleryFilter', galleryFilter);
+      for (const el of cards.values()) applyFilter(el);
+    });
+
     function sync(items) {
       const ids = new Set(items.map(i => i.id));
+      updateFilterOptions(items);
 
       // 사라진(만료된) 이미지는 DOM에서 제거
       for (const [id, el] of cards) {
@@ -345,6 +404,7 @@
       const fresh = items.filter(i => !cards.has(i.id));
       for (let k = fresh.length - 1; k >= 0; k--) {
         const el = makeCard(fresh[k]);
+        applyFilter(el);
         gallery.prepend(el);
         cards.set(fresh[k].id, el);
       }
