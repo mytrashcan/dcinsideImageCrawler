@@ -1,0 +1,5 @@
+Contact: mailto:hnnmonsta@gmail.com
+Expires: 2027-07-01T00:00:00.000Z
+Preferred-Languages: ko, en
+Canonical: https://dcselfie.win/.well-known/security.txt
+Policy: https://dcselfie.win/policy

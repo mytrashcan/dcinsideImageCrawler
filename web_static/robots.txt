@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+# 피드 이미지는 TTL(기본 3시간) 후 삭제되므로 색인해도 곧 죽는 링크가 됨
+Disallow: /static/images/
+
+Sitemap: https://dcselfie.win/sitemap.xml

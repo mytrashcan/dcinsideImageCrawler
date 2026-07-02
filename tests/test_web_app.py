@@ -147,3 +147,24 @@ def test_feed_exposes_source_gallery(monkeypatch, tmp_path):
     feed = client.get("/feed").json()
     # 갤러리별 필터를 위해 출처 갤러리명을 내려보낸다 (미기록 이미지는 빈 문자열)
     assert feed[0]["gallery"] == "stariload"
+
+
+def test_discovery_endpoints_are_served(monkeypatch, tmp_path):
+    import shutil
+
+    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
+    static = tmp_path / "web_static"
+    for f in ("robots.txt", "sitemap.xml", "security.txt"):
+        shutil.copy(f"web_static/{f}", static / f)
+
+    robots = client.get("/robots.txt")
+    assert robots.status_code == 200
+    assert "Sitemap: https://dcselfie.win/sitemap.xml" in robots.text
+
+    sitemap = client.get("/sitemap.xml")
+    assert sitemap.status_code == 200
+    assert "<loc>https://dcselfie.win/</loc>" in sitemap.text
+
+    sec = client.get("/.well-known/security.txt")
+    assert sec.status_code == 200
+    assert "Contact: mailto:" in sec.text and "Expires:" in sec.text
