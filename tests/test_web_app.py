@@ -168,3 +168,17 @@ def test_discovery_endpoints_are_served(monkeypatch, tmp_path):
     sec = client.get("/.well-known/security.txt")
     assert sec.status_code == 200
     assert "Contact: mailto:" in sec.text and "Expires:" in sec.text
+
+
+def test_pwa_manifest_is_served(monkeypatch, tmp_path):
+    import shutil
+
+    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
+    shutil.copy("web_static/manifest.json", tmp_path / "web_static" / "manifest.json")
+
+    r = client.get("/manifest.json")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("application/manifest+json")
+    m = r.json()
+    assert m["display"] == "standalone"
+    assert any(i["sizes"] == "512x512" for i in m["icons"])

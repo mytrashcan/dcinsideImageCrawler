@@ -458,6 +458,9 @@ def create_app() -> FastAPI:
         ("og-image.jpg", "image/jpeg"),  # 링크 공유 미리보기(Open Graph)
         ("robots.txt", "text/plain"),    # Sitemap 참조 포함 (CF 관리형 robots와 병합됨)
         ("sitemap.xml", "application/xml"),
+        ("manifest.json", "application/manifest+json"),  # PWA
+        ("icon-192.png", "image/png"),
+        ("icon-512.png", "image/png"),
     ):
         def _make_favicon_route(fname=_fname, mime=_mime):
             async def _serve():
