@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 ARCA_BASE = "https://arca.live"
 
 # 이미지 CDN 도메인 (namu.la)
-IMAGE_CDN_RE = re.compile(r"//ac-[-a-z]+\d*\.namu\.la/")
+IMAGE_CDN_RE = re.compile(r"//ac[-a-z0-9]*\.namu\.la/")
 
 # 포스트 목록 파싱용 Strainer -- vrow 요소만 수집
 _VROW_STRAINER = SoupStrainer(attrs={"class": re.compile(r"\bvrow\b")})
@@ -52,6 +52,17 @@ class ArcaliveCrawler:
         self._browser = await uc.Browser.create(
             headless=True,
             no_sandbox=True,
+            browser_args=[
+                "--disable-blink-features=AutomationControlled",
+                "--disable-features=IsolateOrigins,site-per-process",
+                "--disable-site-isolation-trials",
+                "--disable-web-security",
+                "--disable-features=TranslateUI",
+                "--disable-ipc-flooding-protection",
+                "--window-size=1920,1080",
+                "--start-maximized",
+                "--disable-dev-shm-usage",
+            ],
         )
         self._tab = self._browser.main_tab
         self._started = True
@@ -65,14 +76,25 @@ class ArcaliveCrawler:
         except Exception:
             pass
 
-    async def _get_page_html(self, url: str, timeout: int = 20) -> str:
-        """nodriver로 URL을 열고 HTML을 반환."""
+    async def _get_page_html(self, url: str, timeout: int = 30) -> str:
+        """nodriver로 URL을 열고 HTML을 반환.
+
+        managed challenge는 JS 실행 후 리다이렉트까지 시간이 걸리므로 충분히 대기.
+        """
         await self._ensure_browser()
         try:
             await self._tab.get(url, new_tab=False)
-            # 페이지 로딩 + JS 실행 대기
-            await self._tab.sleep(3)
+            # managed challenge는 JS 실행 + 리다이렉트에 시간이 걸림
+            await self._tab.sleep(8)
+
             content = await self._tab.page.content()
+
+            # 챌린지 페이지인지 확인하고 재시도
+            if len(content) < 2000 or "challenge" in content[:500].lower():
+                logger.debug("챌린지 감지됨, 5초 추가 대기...")
+                await self._tab.sleep(5)
+                content = await self._tab.page.content()
+
             return content
         except Exception as e:
             raise Exception(f"nodriver 요청 실패 ({url}): {e}")
