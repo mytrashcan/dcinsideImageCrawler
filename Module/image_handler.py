@@ -150,8 +150,13 @@ class ImageHandler:
             buffer = io.BytesIO(image_data)
             return buffer, len(image_data)
 
-    def process_image(self, image_data, filename):
-        """이미지 처리 (필요시 압축) - Discord/Telegram용 두 버전 반환"""
+    def process_image(self, image_data, filename, skip_telegram=False):
+        """이미지 처리 (필요시 압축) - Discord/Telegram용 두 버전 반환
+
+        Args:
+            skip_telegram: True이면 telegram_buffer 생성 생략 (메모리 절약).
+                           아카라이브 봇 등 Telegram 미사용 시 True.
+        """
         file_ext = filename.split('.')[-1].lower() if '.' in filename else ''
         is_gif = file_ext == 'gif' or image_data[:6] in (b'GIF87a', b'GIF89a')
 
@@ -171,8 +176,11 @@ class ImageHandler:
             discord_buffer = io.BytesIO(image_data)
             discord_size = original_size
 
-        # Telegram용 (10MB 제한)
-        if original_size > TELEGRAM_MAX_SIZE:
+        # Telegram용 (10MB 제한). skip_telegram이면 빈 버퍼 반환
+        if skip_telegram:
+            telegram_buffer = io.BytesIO(b"")
+            telegram_size = 0
+        elif original_size > TELEGRAM_MAX_SIZE:
             if discord_compressed and discord_size <= TELEGRAM_MAX_SIZE:
                 # Discord용 압축 결과가 Telegram 제한도 만족하면 재압축 생략
                 # (기본 설정에서는 두 제한이 모두 10MB라 항상 이 경로를 탐)
