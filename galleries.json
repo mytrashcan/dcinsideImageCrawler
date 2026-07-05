@@ -35,7 +35,7 @@
         ]
     },
     "arca_bluearchive": {
-        "base_url": "https://arca.live/b/bluearchive?category=%EC%A7%A4",
+        "base_url": "https://arca.live/b/bluearchive",
         "channel_ids": [
             "1352993534747086949",
             "1370703789492928513"
@@ -43,7 +43,7 @@
         "type": "arca"
     },
     "arca_genshin": {
-        "base_url": "https://arca.live/b/genshin?category=%EC%A7%A4",
+        "base_url": "https://arca.live/b/genshin",
         "channel_ids": [
             "1352993534747086949",
             "1370703789492928513"
@@ -51,7 +51,7 @@
         "type": "arca"
     },
     "arca_zzz": {
-        "base_url": "https://arca.live/b/zenlesszonezero?category=%EC%A7%A4",
+        "base_url": "https://arca.live/b/zenlesszonezero",
         "channel_ids": [
             "1352993534747086949",
             "1370703789492928513"
@@ -59,7 +59,7 @@
         "type": "arca"
     },
     "arca_honkai": {
-        "base_url": "https://arca.live/b/honkaistarrail?category=%EC%A7%A4",
+        "base_url": "https://arca.live/b/honkaistarrail",
         "channel_ids": [
             "1352993534747086949",
             "1370703789492928513"
@@ -67,7 +67,7 @@
         "type": "arca"
     },
     "arca_wuthering": {
-        "base_url": "https://arca.live/b/wutheringwaves?category=%EC%A7%A4",
+        "base_url": "https://arca.live/b/wutheringwaves",
         "channel_ids": [
             "1352993534747086949",
             "1370703789492928513"
