@@ -1,4 +1,4 @@
-"""단일 갤러리 크롤러 + 임시 웹 갤러리를 한 프로세스에서 실행한다.
+"""단일 갤러리 크롤러 + 임시 웹 갤러리를 한 프로세스에서 실행한다 (DCInside/Arcalive 모두).
 
 여러 갤러리를 한 웹 페이지에 모으려면 이 파일 대신:
   - launcher.py  (WEB_GALLERY=1 환경변수로 각 크롤러가 웹에 적재)
@@ -11,6 +11,7 @@ import os
 import sys
 from threading import Thread
 
+from Module.arca_bot import ArcaBot
 from Module.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TOKEN, get_discord_intents, validate_required_env
 from Module.dcbot import DCBot
 from web_app import attach_web_gallery, create_app
@@ -36,23 +37,39 @@ def start_web_gallery():
 
 
 async def main(gallery_name):
-    validate_required_env()
     config = load_gallery_config(gallery_name)
     intents = get_discord_intents()
-    bot = DCBot(
-        token=TOKEN,
-        base_url=config["base_url"],
-        channel_ids=config["channel_ids"],
-        telegram_token=TELEGRAM_BOT_TOKEN,
-        telegram_chat_id=TELEGRAM_CHAT_ID,
-        intents=intents,
-    )
 
     web_thread = Thread(target=start_web_gallery, daemon=True)
     web_thread.start()
 
-    # dcbot은 건드리지 않고 센더만 감싸 웹 갤러리에 적재
-    attach_web_gallery(bot.message_sender, gallery_name)
+    if config.get("type") == "arca":
+        # ArcaBot은 Telegram을 쓰지 않으므로 DISCORD_TOKEN만 확인한다.
+        if not TOKEN:
+            print("필수 환경변수가 없습니다: DISCORD_TOKEN")
+            sys.exit(1)
+        # ArcaBot은 WEB_GALLERY=1 이면 내부에서 웹 갤러리에 적재한다.
+        # (생성자에서 환경변수를 읽으므로 봇 생성 전에 설정)
+        os.environ["WEB_GALLERY"] = "1"
+        bot = ArcaBot(
+            token=TOKEN,
+            base_url=config["base_url"],
+            channel_ids=config["channel_ids"],
+            intents=intents,
+            gallery_name=gallery_name,
+        )
+    else:
+        validate_required_env()
+        bot = DCBot(
+            token=TOKEN,
+            base_url=config["base_url"],
+            channel_ids=config["channel_ids"],
+            telegram_token=TELEGRAM_BOT_TOKEN,
+            telegram_chat_id=TELEGRAM_CHAT_ID,
+            intents=intents,
+        )
+        # dcbot은 건드리지 않고 센더만 감싸 웹 갤러리에 적재
+        attach_web_gallery(bot.message_sender, gallery_name)
 
     await bot.run_bot()
 

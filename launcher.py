@@ -49,18 +49,16 @@ def is_already_running(gallery_name):
             if not cmdline:
                 continue
             joined = " ".join(cmdline)
-            if ("run_gallery.py" in joined or "run_arca_gallery.py" in joined) and gallery_name in joined:
+            if "run_gallery.py" in joined and gallery_name in joined:
                 return True
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             continue
     return False
 
 def run_script(gallery_name):
-    """run_gallery.py(또는 arca 갤러리는 run_arca_gallery.py)를 통해 갤러리 크롤러 실행"""
+    """run_gallery.py를 통해 갤러리 크롤러 실행 (DCInside/Arcalive 모두)"""
     python_executable = sys.executable
-    config = gallery_configs.get(gallery_name, {})
-    script = "run_arca_gallery.py" if config.get("type") == "arca" else "run_gallery.py"
-    process = subprocess.Popen([python_executable, script, gallery_name])
+    process = subprocess.Popen([python_executable, "run_gallery.py", gallery_name])
     logger.info(f"{gallery_name} 크롤러 실행됨 (PID: {process.pid})")
     return process
 
