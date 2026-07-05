@@ -62,7 +62,7 @@ class ArcaBot(discord.Client):
         """주기적으로 새 게시글을 폴링한다."""
         while True:
             try:
-                posts = await asyncio.to_thread(self.crawler.get_latest_posts)
+                posts = await self.crawler.get_latest_posts()
                 for post in posts:
                     logger.info(f"[아카라이브] 새 게시글: {post['title']} ({post['link']})")
                     await self.process_post(post)
@@ -77,9 +77,7 @@ class ArcaBot(discord.Client):
 
     async def process_post(self, post):
         """게시글 내 모든 이미지를 추출하여 디스코드로 전송한다."""
-        images = await asyncio.to_thread(
-            self.crawler.extract_all_images, post["link"]
-        )
+        images = await self.crawler.extract_all_images(post["link"])
         if not images:
             logger.info(f"[아카라이브] 이미지 없음: {post['title']}")
             return
@@ -138,25 +136,19 @@ class ArcaBot(discord.Client):
 
     def _download_single_image(self, img_url: str, referer: str) -> bytes | None:
         """단일 이미지 URL을 메모리로 다운로드.
-        
-        ImageHandler.download_images()가 DCInside 전용이라
-        직접 cloudscraper로 다운로드한다.
+
+        namu.la CDN은 Cloudflare 보호가 없으므로 일반 requests 사용.
         """
+        import requests as req
+
         headers = {"Referer": referer}
         try:
-            resp = self.crawler.scraper.get(img_url, headers=headers, timeout=15)
+            resp = req.get(img_url, headers=headers, timeout=15)
             resp.raise_for_status()
             return resp.content
-        except Exception:
-            # fallback: 일반 requests
-            import requests as req
-            try:
-                resp = req.get(img_url, headers=headers, timeout=15)
-                resp.raise_for_status()
-                return resp.content
-            except Exception as e2:
-                logger.warning(f"이미지 다운로드 실패 ({img_url}): {e2}")
-                return None
+        except Exception as e:
+            logger.warning(f"이미지 다운로드 실패 ({img_url}): {e}")
+            return None
 
     async def _send_image_batch(self, batch: list[dict], title: str,
                                 link: str, batch_index: int):
