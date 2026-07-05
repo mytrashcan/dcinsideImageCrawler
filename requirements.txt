@@ -10,4 +10,4 @@ lxml>=5.0.0
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
 rich==13.9.4
-cloudscraper>=1.2.71
+nodriver>=0.0.1

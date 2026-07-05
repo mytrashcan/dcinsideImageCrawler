@@ -1,0 +1,19 @@
+[Unit]
+Description=dcselfie image crawler launcher (DCInside + Arcalive)
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/dcinsideImageCrawler
+Environment=WEB_GALLERY=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 launcher.py
+Restart=always
+RestartSec=30
+StandardOutput=append:/home/ubuntu/dcinsideImageCrawler/logs/launcher.log
+StandardError=append:/home/ubuntu/dcinsideImageCrawler/logs/launcher.log
+
+[Install]
+WantedBy=multi-user.target
