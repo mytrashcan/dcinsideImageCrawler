@@ -27,7 +27,7 @@ IMAGE_CDN_RE = re.compile(r"//ac-[-a-z]+\d*\.namu\.la/")
 _VROW_STRAINER = SoupStrainer(attrs={"class": re.compile(r"\bvrow\b")})
 
 # 최신 글 중 몇 개를 건너뛸지 — 완장/알바 정제물을 타겟으로 함 (DCInside와 동일)
-POST_SKIP_COUNT = 30
+POST_SKIP_COUNT = 10  # 아카라이브는 페이지당 ~30개만 표시하므로 30은 너무 큼
 
 
 class ArcaliveCrawler:
@@ -88,8 +88,11 @@ class ArcaliveCrawler:
         for post in posts:
             dedup_key = (post["title"], post["post_id"])
             if dedup_key not in self.sent_items:
-                self.sent_items.add(dedup_key)
                 new_posts.append(post)
+
+        # 반환할 포스트만 sent_items에 기록 (초과분은 다음 사이클에서 재시도)
+        for post in new_posts[:max_posts]:
+            self.sent_items.add((post["title"], post["post_id"]))
 
         return new_posts[:max_posts]
 

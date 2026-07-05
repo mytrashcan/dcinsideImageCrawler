@@ -103,18 +103,17 @@ class ArcaBot(discord.Client):
                 if not buffer_data:
                     continue
 
-                # 내용 기반 중복 제거 (DCInside는 download_images()에서 수행하지만
-                # 여기서는 process_image()를 직접 쓰므로 해시 체크가 없다)
+                # 내용 기반 중복 제거 — process_image 성공 후에 체크 (실패 시 영구 스킵 방지)
+                discord_buffer, telegram_buffer, is_gif = await asyncio.to_thread(
+                    self.image_handler.process_image,
+                    buffer_data, img_info["filename"],
+                )
+
                 content_hash = hashlib.sha256(buffer_data).hexdigest()
                 if self.image_handler._check_hash(content_hash):
                     logger.info(f"[아카라이브] 중복 이미지 스킵: {img_info['filename']}")
                     continue
 
-                # ImageHandler.process_image()로 압축 + 포맷 검증
-                discord_buffer, telegram_buffer, is_gif = await asyncio.to_thread(
-                    self.image_handler.process_image,
-                    buffer_data, img_info["filename"],
-                )
                 downloaded.append({
                     "discord_buffer": discord_buffer,
                     "telegram_buffer": telegram_buffer,
@@ -180,6 +179,10 @@ class ArcaBot(discord.Client):
             if not channel:
                 logger.warning(f"[아카라이브] 채널 없음: {channel_id}")
                 continue
+
+            # 각 채널 전송 전에 버퍼 위치 리셋 (이전 채널 전송으로 소비되었을 수 있음)
+            for item in batch:
+                item["discord_buffer"].seek(0)
 
             files = []
             embeds = []
