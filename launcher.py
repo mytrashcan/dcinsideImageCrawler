@@ -25,10 +25,14 @@ with open(os.path.join(os.path.dirname(__file__), "galleries.json"), encoding="u
     gallery_configs = json.load(f)
 gallery_names = list(gallery_configs.keys())
 
-folder_queue = deque(gallery_names)
+# DC/Arca 분리
+dc_galleries = deque(g for g in gallery_names if gallery_configs[g].get("type") != "arca")
+arca_galleries = deque(g for g in gallery_names if gallery_configs[g].get("type") == "arca")
+
 processes = {}  # {gallery_name: (process, start_time)}
 
-MAX_PROCESSES = 5
+MAX_DC = 5
+MAX_ARCA = 5
 MAX_PROCESS_LIFETIME = 3600
 
 shutdown_requested = False
@@ -74,21 +78,40 @@ def stop_running_processes():
             process.wait()
     processes.clear()
 
+def _pick_from_queue(queue, max_count, source_label):
+    """큐에서 최대 max_count개의 갤러리를 선택 (실행 중이면 건너뜀)"""
+    started = 0
+    skipped = 0
+    for _ in range(len(queue)):
+        if started >= max_count:
+            break
+        if not queue:
+            break
+        gallery_name = queue.popleft()
+        if not is_already_running(gallery_name):
+            process = run_script(gallery_name)
+            processes[gallery_name] = (process, time.time())
+            started += 1
+        else:
+            skipped += 1
+        queue.append(gallery_name)
+
+    if started > 0:
+        logger.info(f"{source_label}: {started}개 시작됨" + (f", {skipped}개 이미 실행 중" if skipped else ""))
+    return started
+
 def manage_crawlers():
-    """크롤링 프로세스를 관리"""
+    """크롤링 프로세스를 관리 (DC 최대 {MAX_DC}개 + Arca 최대 {MAX_ARCA}개)"""
     while not shutdown_requested:
-        logger.info(f"실행 준비된 갤러리: {list(folder_queue)[:MAX_PROCESSES]}")
+        logger.info(f"DC 갤러리: {len(dc_galleries)}개, Arca 갤러리: {len(arca_galleries)}개")
 
         stop_running_processes()
 
-        for _ in range(MAX_PROCESSES):
-            if folder_queue and not shutdown_requested:
-                gallery_name = folder_queue.popleft()
-                if not is_already_running(gallery_name):
-                    process = run_script(gallery_name)
-                    processes[gallery_name] = (process, time.time())
-                folder_queue.append(gallery_name)
-                time.sleep(5)
+        dc_count = _pick_from_queue(dc_galleries, MAX_DC, "DC")
+        arca_count = _pick_from_queue(arca_galleries, MAX_ARCA, "Arca")
+
+        total = dc_count + arca_count
+        logger.info(f"총 {total}개 크롤러 실행 중 (DC: {dc_count}, Arca: {arca_count})")
 
         elapsed_time = 0
         while elapsed_time < MAX_PROCESS_LIFETIME and not shutdown_requested:
