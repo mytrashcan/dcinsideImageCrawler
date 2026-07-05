@@ -155,7 +155,7 @@ class ArcaBot(discord.Client):
     async def _send_image_batch(self, batch: list[dict], title: str,
                                 link: str, batch_index: int):
         """한 배치의 이미지를 Discord embed로 전송한다.
-        
+
         - 첫 번째 embed: title + link 포함
         - 나머지 embed: 이미지만 (제목 없는 깔끔한 갤러리 형태)
         """
