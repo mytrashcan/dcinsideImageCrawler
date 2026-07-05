@@ -30,5 +30,20 @@
     "comic": {
         "base_url": "https://gall.dcinside.com/board/lists/?id=comic_new6",
         "channel_ids": ["1352993534747086949", "1370703789492928513"]
+    },
+    "arca_bluearchive": {
+        "base_url": "https://arca.live/b/bluearchive",
+        "channel_ids": ["1352993534747086949"],
+        "type": "arca"
+    },
+    "arca_genshin": {
+        "base_url": "https://arca.live/b/genshin",
+        "channel_ids": ["1352993534747086949"],
+        "type": "arca"
+    },
+    "arca_characterai": {
+        "base_url": "https://arca.live/b/characterai",
+        "channel_ids": ["1352993534747086949"],
+        "type": "arca"
     }
 }
