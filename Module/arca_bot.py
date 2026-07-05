@@ -7,7 +7,9 @@ DCInsideImageCrawler의 dcbot.py와 차이점:
 - 멀티 임베드 메시지 (한 게시글 여러 이미지를 하나의 메시지로)
 """
 import asyncio
+import hashlib
 import logging
+import os
 import random
 
 import discord
@@ -31,11 +33,13 @@ class ArcaBot(discord.Client):
     게시글 내 모든 이미지를 추출하여 전송한다.
     """
 
-    def __init__(self, token, base_url, channel_ids, intents):
+    def __init__(self, token, base_url, channel_ids, intents, gallery_name=""):
         super().__init__(intents=intents)
         self.token = token
         self.base_url = base_url
         self.channel_ids = channel_ids
+        self.web_gallery_name = gallery_name
+        self.web_gallery_enabled = os.getenv("WEB_GALLERY") == "1"
         self.crawler = ArcaliveCrawler(base_url)
         self.image_handler = ImageHandler()
         # Telegram 없이 Discord 전용 MessageSender
@@ -87,6 +91,13 @@ class ArcaBot(discord.Client):
                     self._download_single_image, img_info["url"], link
                 )
                 if not buffer_data:
+                    continue
+
+                # 내용 기반 중복 제거 (DCInside는 download_images()에서 수행하지만
+                # 여기서는 process_image()를 직접 쓰므로 해시 체크가 없다)
+                content_hash = hashlib.sha256(buffer_data).hexdigest()
+                if self.image_handler._check_hash(content_hash):
+                    logger.info(f"[아카라이브] 중복 이미지 스킵: {img_info['filename']}")
                     continue
 
                 # ImageHandler.process_image()로 압축 + 포맷 검증
@@ -142,6 +153,15 @@ class ArcaBot(discord.Client):
         - 첫 번째 embed: title + link 포함
         - 나머지 embed: 이미지만 (제목 없는 깔끔한 갤러리 형태)
         """
+        # 웹 갤러리 적재용 스냅샷 — 전송 과정에서 버퍼 위치가 소비되므로 미리 확보
+        gallery_snapshot = None
+        if self.web_gallery_enabled:
+            gallery_snapshot = [
+                (item["discord_buffer"].getvalue(), item["filename"])
+                for item in batch
+            ]
+
+        sent_ok = False
         for channel_id in self.channel_ids:
             channel = self.get_channel(int(channel_id))
             if not channel:
@@ -179,6 +199,7 @@ class ArcaBot(discord.Client):
 
             try:
                 await channel.send(files=files, embeds=embeds)
+                sent_ok = True
                 logger.info(
                     f"[아카라이브] 배치 전송 완료: {title} "
                     f"({batch_index + 1}~{batch_index + len(batch)}/{len(batch)})"
@@ -189,9 +210,35 @@ class ArcaBot(discord.Client):
                 if e.status == 413:
                     await self._send_fallback(channel, batch, title, link, batch_index)
 
+        # 전송 성공한 배치를 공유 웹 갤러리에 적재
+        # (fallback 경로는 _send_fallback 내부에서 개별 적재)
+        if sent_ok and gallery_snapshot:
+            for i, (data, filename) in enumerate(gallery_snapshot):
+                self._save_to_web_gallery(data, filename, batch_index + i, title, link)
+
         # 배치 간 딜레이 (rate limit 방지)
         if batch_index > 0:
             await asyncio.sleep(INTER_IMAGE_DELAY)
+
+    def _save_to_web_gallery(self, data: bytes, filename: str,
+                             global_idx: int, title: str, link: str):
+        """WEB_GALLERY=1 이면 전송된 이미지를 공유 웹 갤러리에 적재한다.
+
+        첫 번째 이미지에만 title+link를 붙인다 (피드에서 게시글당 한 번만 노출).
+        """
+        if not self.web_gallery_enabled or not data:
+            return
+        try:
+            from web_app import save_bytes_to_gallery
+            save_bytes_to_gallery(
+                data,
+                filename,
+                title=title if global_idx == 0 else "",
+                link=link if global_idx == 0 else "",
+                gallery=self.web_gallery_name,
+            )
+        except (OSError, ValueError) as e:
+            logger.warning(f"[아카라이브] 웹 갤러리 적재 실패 ({filename}): {e}")
 
     async def _send_fallback(self, channel, batch: list[dict], title: str,
                               link: str, batch_index: int):
@@ -212,10 +259,13 @@ class ArcaBot(discord.Client):
                 )
                 embed.set_image(url=f"attachment://{filename}")
 
+                # 전송 전에 스냅샷 확보 (send가 버퍼 위치를 소비함)
+                data = buffer.getvalue()
                 await channel.send(
                     file=discord.File(buffer, filename=filename),
                     embed=embed,
                 )
+                self._save_to_web_gallery(data, filename, global_idx, title, link)
             except discord.HTTPException as e2:
                 if e2.status == 413:
                     # 재압축 시도
@@ -227,10 +277,12 @@ class ArcaBot(discord.Client):
                     if recompressed:
                         embed = discord.Embed(color=0x00A3FF)
                         embed.set_image(url=f"attachment://{filename}")
+                        data = recompressed.getvalue()
                         await channel.send(
                             file=discord.File(recompressed, filename=filename),
                             embed=embed,
                         )
+                        self._save_to_web_gallery(data, filename, global_idx, title, link)
                 else:
                     logger.error(f"[아카라이브] fallback 전송 실패: {e2}")
 
