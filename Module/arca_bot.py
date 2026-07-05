@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 MAX_EMBEDS_PER_MSG = 10
 # 이미지 간 전송 딜레이(초)
 INTER_IMAGE_DELAY = 1.0
+# 이미지 다운로드 간격(초) — CDN rate limit 방지
+IMAGE_DOWNLOAD_DELAY = 0.5
 
 
 class ArcaBot(discord.Client):
@@ -114,6 +116,9 @@ class ArcaBot(discord.Client):
             except Exception as e:
                 logger.warning(f"[아카라이브] 이미지 처리 실패 ({img_info['filename']}): {e}")
                 continue
+
+            # CDN rate limit 방지
+            await asyncio.sleep(IMAGE_DOWNLOAD_DELAY)
 
         if not downloaded:
             logger.info(f"[아카라이브] 다운로드 성공한 이미지 없음: {title}")
@@ -224,7 +229,7 @@ class ArcaBot(discord.Client):
                              global_idx: int, title: str, link: str):
         """WEB_GALLERY=1 이면 전송된 이미지를 공유 웹 갤러리에 적재한다.
 
-        첫 번째 이미지에만 title+link를 붙인다 (피드에서 게시글당 한 번만 노출).
+        첫 번째 이미지에는 원본 제목, 이후 이미지에는 '제목 - N' 형식으로 표시한다.
         """
         if not self.web_gallery_enabled or not data:
             return
@@ -233,7 +238,7 @@ class ArcaBot(discord.Client):
             save_bytes_to_gallery(
                 data,
                 filename,
-                title=title if global_idx == 0 else "",
+                title=title if global_idx == 0 else f"{title} - {global_idx + 1}",
                 link=link if global_idx == 0 else "",
                 gallery=self.web_gallery_name,
             )
