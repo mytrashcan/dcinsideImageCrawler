@@ -26,6 +26,9 @@ IMAGE_CDN_RE = re.compile(r"//ac-[-a-z]+\d*\.namu\.la/")
 # 포스트 목록 파싱용 Strainer — vrow 요소만 수집
 _VROW_STRAINER = SoupStrainer(attrs={"class": re.compile(r"\bvrow\b")})
 
+# 최신 글 중 몇 개를 건너뛸지 — 완장/알바 정제물을 타겟으로 함 (DCInside와 동일)
+POST_SKIP_COUNT = 30
+
 
 class ArcaliveCrawler:
     """아카라이브 게시글 크롤러.
@@ -76,6 +79,9 @@ class ArcaliveCrawler:
                 post = self._parse_column_row(vrow)
                 if post:
                     posts.append(post)
+
+        # 완장/알바 정제물을 위해 최신 글 N개 스킵 (DCInside와 동일 원리)
+        posts = posts[POST_SKIP_COUNT:]
 
         # 중복 제거 + 이미 전송한 글 필터링
         new_posts = []

@@ -117,32 +117,6 @@
       max-width: 160px;
     }
     header .actions select:focus { outline: 2px solid #e60023; border-color: transparent; }
-    .source-toggle {
-      display: flex;
-      gap: 2px;
-      background: #f0f0f0;
-      border-radius: 20px;
-      padding: 3px;
-    }
-    .source-toggle button {
-      font: inherit;
-      font-size: 13px;
-      font-weight: 500;
-      padding: 6px 14px;
-      border: none;
-      border-radius: 18px;
-      background: transparent;
-      color: #666;
-      cursor: pointer;
-      transition: all 0.15s;
-      white-space: nowrap;
-    }
-    .source-toggle button:hover { color: #333; }
-    .source-toggle button.active {
-      background: #fff;
-      color: #e60023;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    }
     header .nav-links { display: flex; align-items: center; gap: 16px; }
     /* .actions button(빨간 알약)보다 구체성이 높아야 ☰가 민무늬로 렌더됨 */
     header .actions button.menu-btn {
@@ -373,11 +347,11 @@
       <span class="subtitle">DCInside · Arcalive 자짤 피드</span>
     </div>
     <nav class="actions">
-      <div class="source-toggle" id="sourceToggle">
-        <button value="dcinside" class="active">디시인사이드</button>
-        <button value="arcalive">아카라이브</button>
-        <button value="">전체</button>
-      </div>
+      <select id="galleryFilter" title="갤러리 소스">
+        <option value="">전체</option>
+        <option value="dcinside">디시인사이드</option>
+        <option value="arcalive">아카라이브</option>
+      </select>
       <div class="nav-links" id="navLinks">
         <a href="/request">갤러리 추가 요청</a>
         <a href="/about">소개</a>
@@ -537,8 +511,8 @@
     }
 
     // ── 갤러리 소스 필터 (디시인사이드 / 아카라이브) ──
-    let sourceFilter = localStorage.getItem('sourceFilter') || 'dcinside';
-    const sourceButtons = document.querySelectorAll('#sourceToggle button');
+    const filterSel = document.getElementById('galleryFilter');
+    let sourceFilter = localStorage.getItem('sourceFilter') || '';
 
     function isArca(galleryName) { return galleryName && galleryName.startsWith('arca_'); }
 
@@ -546,29 +520,21 @@
       const g = el.dataset.gallery || '';
       if (sourceFilter === '') { el.hidden = false; return; }
       if (sourceFilter === 'arcalive') { el.hidden = !isArca(g); return; }
-      // dcinside: arca_ 접두사가 아닌 모든 갤러리 (빈 값 포함)
       el.hidden = isArca(g);
     }
 
-    function setSourceFilter(value) {
-      sourceFilter = value;
+    filterSel.addEventListener('change', () => {
+      sourceFilter = filterSel.value;
       localStorage.setItem('sourceFilter', sourceFilter);
-      for (const btn of sourceButtons) {
-        btn.classList.toggle('active', btn.value === value);
-      }
       for (const el of cards.values()) applyFilter(el);
-      rebuildLayout(); // 보이는 카드만으로 컬럼 높이 재분배
-    }
-
-    sourceButtons.forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (btn.value === sourceFilter) return;
-        setSourceFilter(btn.value);
-      });
+      rebuildLayout();
     });
 
     // 초기 상태 복원
-    setSourceFilter(sourceFilter);
+    filterSel.value = sourceFilter;
+    if (sourceFilter) {
+      for (const el of cards.values()) applyFilter(el);
+    }
 
     // ── 새 자짤 대기열 ──
     // 스크롤을 내려 구경 중일 때 새 카드가 끼어들면 masonry 전체가 밀리므로,

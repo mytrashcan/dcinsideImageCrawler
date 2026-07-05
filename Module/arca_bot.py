@@ -5,6 +5,7 @@ DCInsideImageCrawler의 dcbot.py와 차이점:
 - 게시글 내 모든 이미지를 추출하여 전송 (DCInside: 최상단 1개)
 - Telegram 전송 없음 (순수 Discord 전용)
 - 멀티 임베드 메시지 (한 게시글 여러 이미지를 하나의 메시지로)
+- 모든 이미지 처리는 인메모리(BytesIO)로 수행되며, WEB_GALLERY=1 일 때만 공유 웹 갤러리용으로 디스크에 기록됨
 """
 import asyncio
 import hashlib
