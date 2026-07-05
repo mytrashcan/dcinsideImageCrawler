@@ -1,12 +1,23 @@
-# dcinsideImageCrawler - DCInside Image Downloader & Bot Sender
+# dcinsideImageCrawler - DCInside & Arcalive Image Crawler & Bot Sender
 
 [![CI](https://github.com/mytrashcan/dcinsideImageCrawler/actions/workflows/ci.yml/badge.svg)](https://github.com/mytrashcan/dcinsideImageCrawler/actions/workflows/ci.yml)
 
-**dcinsideImageCrawler** is a tool that scrapes images from posts on **DCInside** and automatically sends them to **Discord** and **Telegram** bots. The tool is designed to run on a cloud server like **Oracle Cloud** and **Amazon Web Services**, where it downloads images from DCInside posts and sends them to designated chat channels via bots.
+**dcinsideImageCrawler** is a tool that scrapes images from posts on **DCInside** and **Arcalive** (arca.live) and automatically sends them to **Discord** and **Telegram** bots. The tool is designed to run on a cloud server like **Oracle Cloud** and **Amazon Web Services**, where it downloads images from posts and sends them to designated chat channels via bots.
+
+Two crawler types are supported:
+
+- **DCInside** (`Module/crawler.py` + `Module/dcbot.py`) - scrapes `gall.dcinside.com`, downloads **one image per post** (top image only, as spam prevention), and delivers to Discord + Telegram.
+- **Arcalive** (`Module/arca_crawler.py` + `Module/arca_bot.py`) - scrapes `arca.live` using `cloudscraper` (Cloudflare bypass), downloads **all images from a post**, and delivers to Discord only (multi-embed, up to 10 images per message).
+
+Both crawlers share the same image pipeline (`ImageHandler` for compression/dedup), delivery layer (`MessageSender`), and the optional ephemeral web gallery (`web_app`).
 
 ## Features
 
 - Scrapes images from DCInside and automatically posts to Discord and Telegram
+- Arcalive (arca.live) crawler with Cloudflare bypass via `cloudscraper`
+- All-image extraction per post (Arcalive) vs single-image extraction (DCInside, spam prevention)
+- Discord multi-embed delivery for Arcalive (up to 10 images per message)
+- Both crawlers share the same ephemeral web gallery
 - Works seamlessly on cloud environments like Oracle Cloud
 - Supports multiple image formats (JPG, PNG, GIF) with automatic compression
   - Compression runs once and is reused for both platforms when their size limits match
@@ -24,7 +35,8 @@
 
 - Python 3.11+ (CI tests against 3.11 and 3.12)
 - **Discord Bot Token** (for Discord bot integration)
-- **Telegram Bot Token** (for Telegram bot integration)
+- **Telegram Bot Token** (for Telegram bot integration) - only needed for DCInside galleries; Arcalive galleries are Discord-only
+- The Arcalive crawler requires `cloudscraper` (installed via `requirements.txt`)
 
 ### Steps to Install
 
@@ -76,17 +88,33 @@ Example:
 python run_gallery.py stariload
 ```
 
+### Run a single arcalive gallery
+```bash
+# Run a single arcalive gallery
+python run_arca_gallery.py arca_bluearchive
+
+# With web gallery
+WEB_GALLERY=1 python run_arca_gallery.py arca_genshin
+```
+
 ### Adding a new gallery
 
 Edit `galleries.json` and add a new entry:
 ```json
 {
-    "my_gallery": {
+    "my_dc_gallery": {
         "base_url": "https://gall.dcinside.com/mgallery/board/lists/?id=my_gallery_id",
-        "channel_ids": ["discord_channel_id_1", "discord_channel_id_2"]
+        "channel_ids": ["discord_channel_id_1"]
+    },
+    "my_arca_gallery": {
+        "base_url": "https://arca.live/b/myboard",
+        "channel_ids": ["discord_channel_id_1"],
+        "type": "arca"
     }
 }
 ```
+Set `"type": "arca"` for arca.live galleries. The launcher auto-detects this and runs `run_arca_gallery.py` instead of `run_gallery.py`.
+
 No code changes required - just restart the launcher.
 
 ## Web gallery (optional)
@@ -113,7 +141,7 @@ WEB_GALLERY=1 python launcher.py
 python run_web_server.py
 ```
 
-Open `http://localhost:8000/` - images from every gallery appear in one feed.
+Open `http://localhost:8000/` - images from every gallery appear in one feed. This works for both DCInside and Arcalive galleries - the gallery filter in the web UI shows `arca_*` gallery names for images coming from arcalive sources.
 
 ### A single gallery + web in one process
 
@@ -194,6 +222,7 @@ Notes for small instances (1 GB RAM free tier):
 dcinsideImageCrawler/
 ├── launcher.py            # Process manager - runs multiple gallery crawlers
 ├── run_gallery.py         # Single gallery runner (replaces per-folder main.py)
+├── run_arca_gallery.py    # Single arcalive gallery runner
 ├── run_web_gallery.py     # Single gallery runner + embedded web gallery (FastAPI)
 ├── run_web_server.py      # Standalone web gallery server (for the multi-gallery launcher setup)
 ├── dashboard.py           # Live terminal monitor (web feed + crawler processes)
@@ -208,6 +237,8 @@ dcinsideImageCrawler/
 │   ├── config.py          # Environment variables, headers, logging setup
 │   ├── crawler.py         # DCInside page scraping
 │   ├── dcbot.py           # Discord bot client & crawling orchestration
+│   ├── arca_crawler.py    # Arcalive page scraping
+│   ├── arca_bot.py        # Arcalive Discord bot client
 │   ├── image_handler.py   # Image downloading, deduplication, compression
 │   └── message_sender.py  # Discord & Telegram message delivery
 └── tests/                 # pytest test suite
@@ -222,6 +253,7 @@ dcinsideImageCrawler/
 | `MAX_PROCESS_LIFETIME` | `launcher.py` | 3600s | Process restart interval |
 | `REQUEST_TIMEOUT` | `Module/config.py` | 15s | HTTP request timeout |
 | Crawl interval | `Module/dcbot.py` | 20-40s | Random delay between crawls |
+| Arca crawl interval | `Module/arca_bot.py` | 30-60s | Random delay between arcalive crawls |
 | `WEB_GALLERY` | env | unset | Set to `1` so `launcher.py`/`run_gallery.py` crawlers also feed the web gallery |
 | `WEB_HOST` | env | `0.0.0.0` | Web gallery bind address |
 | `WEB_PORT` | env | 8000 | Web gallery port |

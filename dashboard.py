@@ -75,7 +75,7 @@ def _scan_procs():
             cmd = " ".join(p.info["cmdline"] or [])
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
-        if "run_gallery.py" in cmd:
+        if "run_gallery.py" in cmd or "run_arca_gallery.py" in cmd:
             for g in _galleries():
                 if f" {g}" in cmd or cmd.endswith(g):
                     crawlers[g] = p
