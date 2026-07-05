@@ -39,26 +39,30 @@ BANNER = r"""
  ___  ___ ___ __  __ ___    ___   _   _    _    ___ _____   __
 |   \/ __|_ _|  \/  / __|  / __| /_\ | |  | |  | __| _ \ \ / /
 | |) \__ \| || |\/| \__ \ | (_ |/ _ \| |__| |__| _||   /\ V /
-|___/|___/___|_|  |_|___/  \___/_/ \_\____|____|___|_|_\ |_|
+|___/|___/___|_|  |_|___/  \___/_/ \_\____|____|___|_|_\_|_|
         e p h e m e r a l   i m a g e   f e e d   m o n i t o r
 """
 
 ROSE = "#e60023"
+ARCA_BLUE = "#00A3FF"
 
-
-def _galleries():
+def _configs():
     try:
         with open("galleries.json", encoding="utf-8") as f:
-            return list(json.load(f).keys())
+            return json.load(f)
     except OSError:
-        return []
+        return {}
+
+
+def _gallery_type(name):
+    """갤러리 소스 타입 (dc/arca)"""
+    return "arca" if _configs().get(name, {}).get("type") == "arca" else "dc"
 
 
 _UA = "Mozilla/5.0 (compatible; dcselfie-dashboard/1.0)"
 
 
 def _fetch(path, timeout=2.0 if not REMOTE else 5.0):
-    # 원격(Cloudflare 경유)일 때 기본 urllib UA는 Bot Fight Mode에 막히므로 브라우저 UA를 흉내낸다.
     req = urllib.request.Request(BASE + path, headers={"User-Agent": _UA})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -68,7 +72,7 @@ def _fetch(path, timeout=2.0 if not REMOTE else 5.0):
 
 
 def _scan_procs():
-    """run_gallery.py / run_web_gallery.py / launcher.py / run_web_server.py 프로세스 수집."""
+    """run_gallery.py / launcher.py / run_web_server.py 프로세스 수집."""
     crawlers, services = {}, {}
     for p in psutil.process_iter(["pid", "cmdline", "create_time"]):
         try:
@@ -76,7 +80,7 @@ def _scan_procs():
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
         if "run_gallery.py" in cmd:
-            for g in _galleries():
+            for g in _configs():
                 if f" {g}" in cmd or cmd.endswith(g):
                     crawlers[g] = p
         elif "launcher.py" in cmd:
@@ -152,26 +156,42 @@ def _services_panel(health, services):
 
 
 def _crawlers_panel(crawlers):
-    galleries = _galleries()
-    table = Table(expand=True, border_style="grey39")
-    table.add_column("갤러리", style="bold")
-    table.add_column("상태", justify="center")
-    table.add_column("PID", justify="right", style="dim")
-    table.add_column("메모리", justify="right")
-    table.add_column("업타임", justify="right", style="cyan")
+    configs = _configs()
+    galleries = list(configs.keys())
 
-    running = 0
-    for g in galleries:
-        p = crawlers.get(g)
-        if p:
-            running += 1
-            table.add_row(g, Text("● 크롤중", style="green"), str(p.info["pid"]),
-                          f"{_rss_mb(p):.0f}MB", _uptime(p))
-        else:
-            table.add_row(g, Text("○ 대기", style="dim"), "-", "-", "-")
+    # DC / Arca 분리
+    dc_galleries = [g for g in galleries if configs[g].get("type") != "arca"]
+    arca_galleries = [g for g in galleries if configs[g].get("type") == "arca"]
 
-    title = f"[bold]크롤러[/]  ([green]{running}[/]/{len(galleries)} 실행중)"
-    return Panel(table, title=title, border_style=ROSE)
+    def _crawler_table(g_list, title, border_style):
+        table = Table(expand=True, border_style="grey39")
+        table.add_column("갤러리", style="bold")
+        table.add_column("상태", justify="center")
+        table.add_column("PID", justify="right", style="dim")
+        table.add_column("메모리", justify="right")
+        table.add_column("업타임", justify="right", style="cyan")
+
+        running = 0
+        for g in g_list:
+            p = crawlers.get(g)
+            if p:
+                running += 1
+                table.add_row(g, Text("● 크롤중", style="green"), str(p.info["pid"]),
+                              f"{_rss_mb(p):.0f}MB", _uptime(p))
+            else:
+                table.add_row(g, Text("○ 대기", style="dim"), "-", "-", "-")
+
+        title_text = f"[bold]{title}[/]  ([green]{running}[/]/{len(g_list)} 실행중)"
+        return Panel(table, title=title_text, border_style=border_style)
+
+    top = Table.grid(expand=True)
+    top.add_column(ratio=1)
+    top.add_column(ratio=1)
+    top.add_row(
+        _crawler_table(dc_galleries, "DCInside", ROSE),
+        _crawler_table(arca_galleries, "Arcalive", ARCA_BLUE),
+    )
+    return top
 
 
 def _remote_note_panel():

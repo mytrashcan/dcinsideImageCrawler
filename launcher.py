@@ -62,7 +62,11 @@ def is_already_running(gallery_name):
 def run_script(gallery_name):
     """run_gallery.py를 통해 갤러리 크롤러 실행 (DCInside/Arcalive 모두)"""
     python_executable = sys.executable
-    process = subprocess.Popen([python_executable, "run_gallery.py", gallery_name])
+    process = subprocess.Popen(
+        [python_executable, "run_gallery.py", gallery_name],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     logger.info(f"{gallery_name} 크롤러 실행됨 (PID: {process.pid})")
     return process
 

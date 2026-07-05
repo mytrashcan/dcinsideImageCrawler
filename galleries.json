@@ -51,7 +51,7 @@
         "type": "arca"
     },
     "arca_zzz": {
-        "base_url": "https://arca.live/b/zenless_zone_zero?category=%EC%A7%A4",
+        "base_url": "https://arca.live/b/zenlesszonezero?category=%EC%A7%A4",
         "channel_ids": [
             "1352993534747086949",
             "1370703789492928513"
