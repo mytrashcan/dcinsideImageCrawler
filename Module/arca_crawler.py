@@ -25,6 +25,12 @@ POST_SKIP_COUNT = 10
 # SOCKS 프록시 설정 (OCI → 맥 터널)
 _ARCA_SOCKS_PROXY = os.getenv("ARCA_SOCKS_PROXY", "")
 
+
+def _mask_proxy(url: str) -> str:
+    """프록시 URL의 자격증명(user:pass@)을 로그에 노출하지 않도록 가린다."""
+    return re.sub(r"//[^/@]+@", "//***:***@", url)
+
+
 def _create_session():
     """cloudscraper 세션 생성. ARCA_SOCKS_PROXY가 설정돼 있으면 SOCKS 경유."""
     s = cloudscraper.create_scraper(
@@ -37,7 +43,7 @@ def _create_session():
     })
     if _ARCA_SOCKS_PROXY:
         s.proxies.update({"http": _ARCA_SOCKS_PROXY, "https": _ARCA_SOCKS_PROXY})
-        logger.info(f"아카라이브 SOCKS 프록시 사용: {_ARCA_SOCKS_PROXY}")
+        logger.info(f"아카라이브 SOCKS 프록시 사용: {_mask_proxy(_ARCA_SOCKS_PROXY)}")
     return s
 
 
