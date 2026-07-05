@@ -23,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 # Discord 메시지당 최대 임베드/파일 수
 MAX_EMBEDS_PER_MSG = 10
+# 게시글당 최대 이미지 수 (초과분은 무시)
+MAX_IMAGES_PER_POST = 4
 # 이미지 간 전송 딜레이(초)
 INTER_IMAGE_DELAY = 1.0
 # 이미지 다운로드 간격(초) — CDN rate limit 방지
@@ -81,6 +83,11 @@ class ArcaBot(discord.Client):
         if not images:
             logger.info(f"[아카라이브] 이미지 없음: {post['title']}")
             return
+
+        # 게시글당 최대 이미지 수 제한
+        if len(images) > MAX_IMAGES_PER_POST:
+            logger.info(f"[아카라이브] 이미지 {len(images)}개 중 {MAX_IMAGES_PER_POST}개만 처리: {post['title']}")
+            images = images[:MAX_IMAGES_PER_POST]
 
         title = post["title"]
         link = post["link"]
