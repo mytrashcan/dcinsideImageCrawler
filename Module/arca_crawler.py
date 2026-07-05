@@ -1,134 +1,72 @@
-"""
-아카라이브(Arcalive) 전용 크롤러.
+"""아카라이브(Arcalive) 전용 크롤러.
 
 DCInsideImageCrawler의 Module/crawler.py와 동일한 인터페이스를 제공하지만:
-- Cloudflare 우회를 위해 nodriver (Chromium CDP) 사용
+- cloudscraper로 요청 (맥 IP 경유 시 Cloudflare 챌린지 미발생)
 - 게시글 내 모든 이미지를 추출 (DCInside는 최상단 1개만)
 - 아카라이브 전용 HTML 셀렉터 사용
 """
 import logging
+import os
 import re
 from urllib.parse import urljoin
 
+import cloudscraper
 from bs4 import BeautifulSoup, SoupStrainer
 
 from Module.crawler import BoundedSet
 
 logger = logging.getLogger(__name__)
 
-# 아카라이브 base domain
 ARCA_BASE = "https://arca.live"
-
-# 이미지 CDN 도메인 (namu.la)
 IMAGE_CDN_RE = re.compile(r"//ac[-a-z0-9]*\.namu\.la/")
-
-# 포스트 목록 파싱용 Strainer -- vrow 요소만 수집
 _VROW_STRAINER = SoupStrainer(attrs={"class": re.compile(r"\bvrow\b")})
-
-# 최신 글 중 몇 개를 건너뛸지 -- 완장/알바 정제물을 타겟으로 함
 POST_SKIP_COUNT = 10
+
+# SOCKS 프록시 설정 (OCI → 맥 터널)
+_ARCA_SOCKS_PROXY = os.getenv("ARCA_SOCKS_PROXY", "")
+
+def _create_session():
+    """cloudscraper 세션 생성. ARCA_SOCKS_PROXY가 설정돼 있으면 SOCKS 경유."""
+    s = cloudscraper.create_scraper(
+        browser={"browser": "chrome", "platform": "windows", "desktop": True, "mobile": False},
+    )
+    s.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+    })
+    if _ARCA_SOCKS_PROXY:
+        s.proxies.update({"http": _ARCA_SOCKS_PROXY, "https": _ARCA_SOCKS_PROXY})
+        logger.info(f"아카라이브 SOCKS 프록시 사용: {_ARCA_SOCKS_PROXY}")
+    return s
 
 
 class ArcaliveCrawler:
-    """아카라이브 게시글 크롤러.
-
-    nodriver(Chromium CDP)로 Cloudflare JS 챌린지를 우회한다.
-    """
+    """아카라이브 게시글 크롤러."""
 
     def __init__(self, base_url):
         self.base_url = base_url
         self.sent_items = BoundedSet()
-        self._browser = None
-        self._tab = None
-        self._started = False
-
-    async def _ensure_browser(self):
-        """nodriver 브라우저가 실행 중인지 확인하고 필요하면 시작."""
-        if self._started:
-            return
-        import nodriver as uc
-
-        logger.info("아카라이브 크롤러: Chromium 브라우저 시작 중...")
-        self._browser = await uc.Browser.create(
-            headless=False,
-            no_sandbox=True,
-            display=":99",
-            browser_args=[
-                "--disable-blink-features=AutomationControlled",
-                "--disable-features=IsolateOrigins,site-per-process",
-                "--disable-site-isolation-trials",
-                "--disable-web-security",
-                "--disable-features=TranslateUI",
-                "--disable-ipc-flooding-protection",
-                "--window-size=1920,1080",
-                "--start-maximized",
-                "--disable-dev-shm-usage",
-            ],
-        )
-        self._tab = self._browser.main_tab
-        self._started = True
-        logger.info("아카라이브 크롤러: Chromium 브라우저 시작됨")
-
-        # Cloudflare 챌린지 우회를 위한 세션 웜업
-        try:
-            await self._tab.get(ARCA_BASE)
-            await self._tab.sleep(3)  # JS 챌린지 완료 대기
-            logger.debug("아카라이브 세션 웜업 완료")
-        except Exception:
-            pass
-
-    async def _get_page_html(self, url: str, timeout: int = 30) -> str:
-        """nodriver로 URL을 열고 HTML을 반환.
-
-        managed challenge는 JS 실행 후 리다이렉트까지 시간이 걸리므로 충분히 대기.
-        """
-        await self._ensure_browser()
-        try:
-            await self._tab.get(url, new_tab=False)
-            # managed challenge는 JS 실행 + 리다이렉트에 시간이 걸림
-            await self._tab.sleep(8)
-
-            content = await self._tab.page.content()
-
-            # 챌린지 페이지인지 확인하고 재시도
-            if len(content) < 2000 or "challenge" in content[:500].lower():
-                logger.debug("챌린지 감지됨, 5초 추가 대기...")
-                await self._tab.sleep(5)
-                content = await self._tab.page.content()
-
-            return content
-        except Exception as e:
-            raise Exception(f"nodriver 요청 실패 ({url}): {e}")
+        self.session = _create_session()
 
     # ---------- 포스트 목록 파싱 ----------
 
-    async def get_latest_posts(self, max_posts=5):
-        """최신 게시글 중 이미지가 있는 새 글들을 반환한다.
-
-        아카라이브는 두 가지 레이아웃이 있음:
-        - hybrid: 핫딜/거래 게시판 (a.title.hybrid-title)
-        - column: 일반 이미지 게시판 (a.vrow.column > span.title)
-
-        Returns:
-            list[dict]
-        """
+    def get_latest_posts(self, max_posts=5):
         try:
-            html = await self._get_page_html(self.base_url)
+            res = self.session.get(self.base_url, timeout=15)
+            res.raise_for_status()
         except Exception as e:
             logger.warning(f"아카라이브 목록 요청 실패: {e}")
             return []
 
-        soup = BeautifulSoup(html, "lxml", parse_only=_VROW_STRAINER)
-
+        soup = BeautifulSoup(res.text, "lxml", parse_only=_VROW_STRAINER)
         posts = []
 
-        # === 1) hybrid 레이아웃 ===
         for vrow in soup.select("div.vrow.hybrid"):
             post = self._parse_hybrid_row(vrow)
             if post:
                 posts.append(post)
 
-        # === 2) column 레이아웃 ===
         if not posts:
             for vrow in soup.select("a.vrow.column"):
                 post = self._parse_column_row(vrow)
@@ -136,15 +74,12 @@ class ArcaliveCrawler:
                     posts.append(post)
 
         posts = posts[POST_SKIP_COUNT:]
-
-        # 중복 제거
         new_posts = []
         for post in posts:
             dedup_key = (post["title"], post["post_id"])
             if dedup_key not in self.sent_items:
                 new_posts.append(post)
 
-        # 반환할 포스트만 sent_items에 기록
         for post in new_posts[:max_posts]:
             self.sent_items.add((post["title"], post["post_id"]))
 
@@ -157,14 +92,12 @@ class ArcaliveCrawler:
         href = title_el.get("href", "")
         if not href:
             return None
-        title = title_el.get_text(strip=True)
-        post_id = self._extract_post_id(href)
         if vrow.select_one(".media-icon") is None:
             return None
         return {
             "link": urljoin(ARCA_BASE, href),
-            "title": title,
-            "post_id": post_id,
+            "title": title_el.get_text(strip=True),
+            "post_id": self._extract_post_id(href),
         }
 
     def _parse_column_row(self, vrow):
@@ -174,14 +107,12 @@ class ArcaliveCrawler:
         title_el = vrow.select_one("span.title")
         if not title_el:
             return None
-        title = title_el.get_text(strip=True)
-        post_id = self._extract_post_id(href)
         if vrow.select_one(".media-icon") is None:
             return None
         return {
             "link": urljoin(ARCA_BASE, href),
-            "title": title,
-            "post_id": post_id,
+            "title": title_el.get_text(strip=True),
+            "post_id": self._extract_post_id(href),
         }
 
     @staticmethod
@@ -191,15 +122,15 @@ class ArcaliveCrawler:
 
     # ---------- 개별 게시글 이미지 추출 ----------
 
-    async def extract_all_images(self, post_url: str) -> list[dict]:
-        """게시글 내 모든 이미지 URL 추출."""
+    def extract_all_images(self, post_url: str) -> list[dict]:
         try:
-            html = await self._get_page_html(post_url)
+            res = self.session.get(post_url, timeout=15)
+            res.raise_for_status()
         except Exception as e:
             logger.warning(f"아카라이브 게시글 요청 실패 ({post_url}): {e}")
             return []
 
-        soup = BeautifulSoup(html, "lxml")
+        soup = BeautifulSoup(res.text, "lxml")
         images = []
         seen_urls = set()
 
@@ -223,7 +154,6 @@ class ArcaliveCrawler:
 
         src = img_tag.get("src", "")
         orig = img_tag.get("data-originalurl", "")
-
         if not IMAGE_CDN_RE.search(src) and not IMAGE_CDN_RE.search(orig):
             return
 
@@ -246,15 +176,3 @@ class ArcaliveCrawler:
             "original_url": orig or src,
             "filename": filename,
         })
-
-    async def close(self):
-        """브라우저 종료."""
-        if self._browser:
-            try:
-                await self._browser.stop()
-                logger.info("아카라이브 크롤러: 브라우저 종료됨")
-            except Exception:
-                pass
-            self._started = False
-            self._browser = None
-            self._tab = None
