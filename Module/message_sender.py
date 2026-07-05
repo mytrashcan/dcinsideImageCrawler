@@ -17,7 +17,7 @@ class MessageSender:
             read_timeout=30.0,
             write_timeout=30.0
         )
-        self.telegram_bot = Bot(token=telegram_bot_token, request=request)
+        self.telegram_bot = Bot(token=telegram_bot_token, request=request) if telegram_bot_token else None
         self.telegram_chat_id = telegram_chat_id
         # 413(파일 크기 초과) 시 재압축 폴백에 사용 (없으면 폴백 비활성화)
         self.image_handler = image_handler
@@ -126,6 +126,9 @@ class MessageSender:
 
     async def send_to_telegram(self, image_buffer, filename=None, is_gif=False, max_retries=3):
         """텔레그램으로 이미지 전송 (GIF는 animation으로, 재시도 포함)"""
+        if self.telegram_bot is None:
+            logger.debug("Telegram 봇이 설정되지 않음 — 전송 건너뜀")
+            return False
 
         if not self.validate_image_buffer(image_buffer):
             logger.error("Telegram 전송 취소: 이미지 검증 실패")
