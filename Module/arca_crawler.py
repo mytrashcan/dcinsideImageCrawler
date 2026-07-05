@@ -187,6 +187,11 @@ class ArcaliveCrawler:
 
     def _collect_image(self, img_tag, images: list, seen_urls: set, post_url: str = ""):
         """단일 img 태그에서 이미지 URL을 수집한다."""
+        # 아카콘(이모티콘) 필터링
+        classes = img_tag.get("class", [])
+        if "arca-emoticon" in classes or img_tag.get("data-type") == "emoticon":
+            return
+
         src = img_tag.get("src", "")
         orig = img_tag.get("data-originalurl", "")
 

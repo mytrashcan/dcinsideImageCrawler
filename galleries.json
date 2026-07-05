@@ -1,49 +1,77 @@
 {
     "stariload": {
         "base_url": "https://gall.dcinside.com/mgallery/board/lists/?id=staraiload",
-        "channel_ids": ["1352992953383125114", "1370703789492928513"]
+        "channel_ids": [
+            "1352992953383125114",
+            "1370703789492928513"
+        ]
     },
     "wuthering": {
         "base_url": "https://gall.dcinside.com/mgallery/board/lists/?id=wutheringwaves",
-        "channel_ids": ["1352992953383125114", "1370703789492928513"]
+        "channel_ids": [
+            "1352992953383125114",
+            "1370703789492928513"
+        ]
     },
     "onshinproject": {
         "base_url": "https://gall.dcinside.com/mgallery/board/lists?id=onshinproject",
-        "channel_ids": ["1352992953383125114", "1370703789492928513"]
-    },
-    "projectmx": {
-        "base_url": "https://gall.dcinside.com/mgallery/board/lists/?id=projectmx",
-        "channel_ids": ["1352992953383125114", "1370703789492928513"]
+        "channel_ids": [
+            "1352992953383125114",
+            "1370703789492928513"
+        ]
     },
     "zzz": {
         "base_url": "https://gall.dcinside.com/mgallery/board/lists/?id=zenless_zone_zero",
-        "channel_ids": ["1352992953383125114", "1370703789492928513"]
+        "channel_ids": [
+            "1352992953383125114",
+            "1370703789492928513"
+        ]
     },
     "stellive": {
         "base_url": "https://gall.dcinside.com/mgallery/board/lists/?id=stellive",
-        "channel_ids": ["1352993534747086949", "1370703789492928513"]
-    },
-    "kizunaai": {
-        "base_url": "https://gall.dcinside.com/mgallery/board/lists/?id=kizunaai",
-        "channel_ids": ["1352993534747086949", "1370703789492928513"]
-    },
-    "comic": {
-        "base_url": "https://gall.dcinside.com/board/lists/?id=comic_new6",
-        "channel_ids": ["1352993534747086949", "1370703789492928513"]
+        "channel_ids": [
+            "1352993534747086949",
+            "1370703789492928513"
+        ]
     },
     "arca_bluearchive": {
-        "base_url": "https://arca.live/b/bluearchive",
-        "channel_ids": ["1352993534747086949"],
+        "base_url": "https://arca.live/b/bluearchive?category=%EC%A7%A4",
+        "channel_ids": [
+            "1352993534747086949",
+            "1370703789492928513"
+        ],
         "type": "arca"
     },
     "arca_genshin": {
-        "base_url": "https://arca.live/b/genshin",
-        "channel_ids": ["1352993534747086949"],
+        "base_url": "https://arca.live/b/genshin?category=%EC%A7%A4",
+        "channel_ids": [
+            "1352993534747086949",
+            "1370703789492928513"
+        ],
         "type": "arca"
     },
-    "arca_characterai": {
-        "base_url": "https://arca.live/b/characterai",
-        "channel_ids": ["1352993534747086949"],
+    "arca_zzz": {
+        "base_url": "https://arca.live/b/zenless_zone_zero?category=%EC%A7%A4",
+        "channel_ids": [
+            "1352993534747086949",
+            "1370703789492928513"
+        ],
+        "type": "arca"
+    },
+    "arca_honkai": {
+        "base_url": "https://arca.live/b/honkaistarrail?category=%EC%A7%A4",
+        "channel_ids": [
+            "1352993534747086949",
+            "1370703789492928513"
+        ],
+        "type": "arca"
+    },
+    "arca_wuthering": {
+        "base_url": "https://arca.live/b/wutheringwaves?category=%EC%A7%A4",
+        "channel_ids": [
+            "1352993534747086949",
+            "1370703789492928513"
+        ],
         "type": "arca"
     }
 }
