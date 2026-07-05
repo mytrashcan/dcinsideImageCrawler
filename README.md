@@ -90,11 +90,11 @@ python run_gallery.py stariload
 
 ### Run a single arcalive gallery
 ```bash
-# Run a single arcalive gallery
-python run_arca_gallery.py arca_bluearchive
+# Run a single arcalive gallery (same runner - dispatched by "type" in galleries.json)
+python run_gallery.py arca_bluearchive
 
 # With web gallery
-WEB_GALLERY=1 python run_arca_gallery.py arca_genshin
+WEB_GALLERY=1 python run_gallery.py arca_genshin
 ```
 
 ### Adding a new gallery
@@ -113,7 +113,7 @@ Edit `galleries.json` and add a new entry:
     }
 }
 ```
-Set `"type": "arca"` for arca.live galleries. The launcher auto-detects this and runs `run_arca_gallery.py` instead of `run_gallery.py`.
+Set `"type": "arca"` for arca.live galleries. `run_gallery.py` (and therefore the launcher) auto-detects this and uses the Arcalive crawler instead of the DCInside one.
 
 No code changes required - just restart the launcher.
 
@@ -221,8 +221,7 @@ Notes for small instances (1 GB RAM free tier):
 ```
 dcinsideImageCrawler/
 ├── launcher.py            # Process manager - runs multiple gallery crawlers
-├── run_gallery.py         # Single gallery runner (replaces per-folder main.py)
-├── run_arca_gallery.py    # Single arcalive gallery runner
+├── run_gallery.py         # Single gallery runner (DCInside/Arcalive, dispatched by "type")
 ├── run_web_gallery.py     # Single gallery runner + embedded web gallery (FastAPI)
 ├── run_web_server.py      # Standalone web gallery server (for the multi-gallery launcher setup)
 ├── dashboard.py           # Live terminal monitor (web feed + crawler processes)
