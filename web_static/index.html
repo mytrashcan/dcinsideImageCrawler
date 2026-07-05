@@ -21,13 +21,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="자짤 갤러리" />
-  <meta name="description" content="DCInside 갤러리에서 모은 자짤(셀카·짤방)을 실시간으로 보여주는 핀터레스트형 피드. 일정 시간이 지나면 자동으로 사라집니다." />
+  <meta name="description" content="DCInside·아카라이브 갤러리에서 모은 자짤(셀카·짤방)을 실시간으로 보여주는 핀터레스트형 피드. 일정 시간이 지나면 자동으로 사라집니다." />
 
   <!-- Open Graph (디스코드/카톡 등 링크 공유 미리보기) -->
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="자짤 갤러리" />
   <meta property="og:title" content="자짤 갤러리 · dcselfie.win" />
-  <meta property="og:description" content="DCInside 갤러리에서 모은 자짤을 실시간으로 보여주는 핀터레스트형 피드. 일정 시간이 지나면 사라집니다." />
+  <meta property="og:description" content="DCInside·아카라이브 갤러리에서 모은 자짤을 실시간으로 보여주는 핀터레스트형 피드. 일정 시간이 지나면 사라집니다." />
   <meta property="og:url" content="https://dcselfie.win/" />
   <meta property="og:image" content="https://dcselfie.win/og-image.jpg" />
   <meta property="og:image:width" content="1200" />
@@ -117,6 +117,32 @@
       max-width: 160px;
     }
     header .actions select:focus { outline: 2px solid #e60023; border-color: transparent; }
+    .source-toggle {
+      display: flex;
+      gap: 2px;
+      background: #f0f0f0;
+      border-radius: 20px;
+      padding: 3px;
+    }
+    .source-toggle button {
+      font: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 6px 14px;
+      border: none;
+      border-radius: 18px;
+      background: transparent;
+      color: #666;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .source-toggle button:hover { color: #333; }
+    .source-toggle button.active {
+      background: #fff;
+      color: #e60023;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
     header .nav-links { display: flex; align-items: center; gap: 16px; }
     /* .actions button(빨간 알약)보다 구체성이 높아야 ☰가 민무늬로 렌더됨 */
     header .actions button.menu-btn {
@@ -344,12 +370,14 @@
   <header>
     <div class="brand">
       <span class="logo">자짤 갤러리</span>
-      <span class="subtitle">DCInside 자짤 피드</span>
+      <span class="subtitle">DCInside · Arcalive 자짤 피드</span>
     </div>
     <nav class="actions">
-      <select id="galleryFilter" title="갤러리 필터">
-        <option value="">전체 갤러리</option>
-      </select>
+      <div class="source-toggle" id="sourceToggle">
+        <button value="dcinside" class="active">디시인사이드</button>
+        <button value="arcalive">아카라이브</button>
+        <button value="">전체</button>
+      </div>
       <div class="nav-links" id="navLinks">
         <a href="/request">갤러리 추가 요청</a>
         <a href="/about">소개</a>
@@ -508,37 +536,39 @@
       }
     }
 
-    // ── 갤러리별 필터 ──
-    const filterSel = document.getElementById('galleryFilter');
-    let galleryFilter = localStorage.getItem('galleryFilter') || '';
+    // ── 갤러리 소스 필터 (디시인사이드 / 아카라이브) ──
+    let sourceFilter = localStorage.getItem('sourceFilter') || 'dcinside';
+    const sourceButtons = document.querySelectorAll('#sourceToggle button');
+
+    function isArca(galleryName) { return galleryName && galleryName.startsWith('arca_'); }
 
     function applyFilter(el) {
-      el.hidden = !!(galleryFilter && el.dataset.gallery !== galleryFilter);
+      const g = el.dataset.gallery || '';
+      if (sourceFilter === '') { el.hidden = false; return; }
+      if (sourceFilter === 'arcalive') { el.hidden = !isArca(g); return; }
+      // dcinside: arca_ 접두사가 아닌 모든 갤러리 (빈 값 포함)
+      el.hidden = isArca(g);
     }
 
-    function updateFilterOptions(items) {
-      const known = new Set([...filterSel.options].map(o => o.value));
-      for (const g of new Set(items.map(i => i.gallery).filter(Boolean))) {
-        if (!known.has(g)) {
-          const opt = document.createElement('option');
-          opt.value = g;
-          opt.textContent = g;
-          filterSel.appendChild(opt);
-        }
+    function setSourceFilter(value) {
+      sourceFilter = value;
+      localStorage.setItem('sourceFilter', sourceFilter);
+      for (const btn of sourceButtons) {
+        btn.classList.toggle('active', btn.value === value);
       }
-      // 저장된 필터가 옵션에 생기면 선택 상태 복원
-      if (galleryFilter && filterSel.value !== galleryFilter &&
-          [...filterSel.options].some(o => o.value === galleryFilter)) {
-        filterSel.value = galleryFilter;
-      }
-    }
-
-    filterSel.addEventListener('change', () => {
-      galleryFilter = filterSel.value;
-      localStorage.setItem('galleryFilter', galleryFilter);
       for (const el of cards.values()) applyFilter(el);
       rebuildLayout(); // 보이는 카드만으로 컬럼 높이 재분배
+    }
+
+    sourceButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (btn.value === sourceFilter) return;
+        setSourceFilter(btn.value);
+      });
     });
+
+    // 초기 상태 복원
+    setSourceFilter(sourceFilter);
 
     // ── 새 자짤 대기열 ──
     // 스크롤을 내려 구경 중일 때 새 카드가 끼어들면 masonry 전체가 밀리므로,
@@ -577,7 +607,6 @@
 
     function sync(items) {
       const ids = new Set(items.map(i => i.id));
-      updateFilterOptions(items);
 
       // 사라진(만료된) 이미지는 DOM에서 제거 + 대기열/배치 순서에서도 제거
       for (const [id, el] of cards) {
