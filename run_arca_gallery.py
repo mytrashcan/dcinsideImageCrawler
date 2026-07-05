@@ -7,7 +7,6 @@ DCInsideImageCrawler의 run_gallery.py와 동일한 패턴:
 """
 import asyncio
 import json
-import os
 import sys
 
 from Module.arca_bot import ArcaBot
@@ -32,14 +31,8 @@ async def main(gallery_name):
         base_url=config["base_url"],
         channel_ids=config["channel_ids"],
         intents=intents,
+        gallery_name=gallery_name,
     )
-    # WEB_GALLERY=1 이면 공유 웹 갤러리에 적재
-    if os.getenv("WEB_GALLERY") == "1":
-        from web_app import attach_web_gallery
-        attach_web_gallery(
-            bot.message_sender,
-            gallery=gallery_name,
-        )
 
     await bot.run_bot()
 

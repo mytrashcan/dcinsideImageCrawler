@@ -8,11 +8,12 @@ DCInsideImageCrawler의 Module/crawler.py와 동일한 인터페이스를 제공
 """
 import logging
 import re
-from collections import OrderedDict
 from urllib.parse import urljoin
 
 import cloudscraper
 from bs4 import BeautifulSoup, SoupStrainer
+
+from Module.crawler import BoundedSet
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +22,6 @@ ARCA_BASE = "https://arca.live"
 
 # 이미지 CDN 도메인 (namu.la)
 IMAGE_CDN_RE = re.compile(r"//ac-[-a-z]+\d*\.namu\.la/")
-
-MAX_CACHE_SIZE = 500
 
 # 포스트 목록 파싱용 Strainer — vrow 요소만 수집
 _VROW_STRAINER = SoupStrainer(attrs={"class": re.compile(r"\bvrow\b")})
@@ -169,13 +168,13 @@ class ArcaliveCrawler:
         body = soup.select_one("div.article-body")
         if body:
             for img in body.find_all("img"):
-                self._collect_image(img, images, seen_urls)
+                self._collect_image(img, images, seen_urls, post_url)
 
         # 2) fr-view 내 이미지 (article-body 밖에 있을 경우 대비)
         content = soup.select_one(".fr-view.article-content")
         if content and content.parent != body:
             for img in content.find_all("img"):
-                self._collect_image(img, images, seen_urls)
+                self._collect_image(img, images, seen_urls, post_url)
 
         logger.info(f"아카라이브 게시글 이미지 {len(images)}개 발견: {post_url}")
         return images
@@ -211,25 +210,3 @@ class ArcaliveCrawler:
             "original_url": orig or src,
             "filename": filename,
         })
-
-
-class BoundedSet:
-    """크기가 제한된 set (FIFO 방식으로 오래된 항목 제거)"""
-
-    def __init__(self, maxsize=MAX_CACHE_SIZE):
-        self._data = OrderedDict()
-        self._maxsize = maxsize
-
-    def __contains__(self, item):
-        return item in self._data
-
-    def add(self, item):
-        if item in self._data:
-            self._data.move_to_end(item)
-            return
-        if len(self._data) >= self._maxsize:
-            self._data.popitem(last=False)
-        self._data[item] = None
-
-    def clear(self):
-        self._data.clear()

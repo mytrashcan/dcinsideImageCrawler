@@ -20,9 +20,10 @@ logger = logging.getLogger(__name__)
 env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "Module", ".env"))
 load_dotenv(env_path)
 
-# galleries.json에서 갤러리 목록 로드
+# galleries.json에서 갤러리 목록 로드 (arca 갤러리 포함)
 with open(os.path.join(os.path.dirname(__file__), "galleries.json"), encoding="utf-8") as f:
-    gallery_names = list(json.load(f).keys())
+    gallery_configs = json.load(f)
+gallery_names = list(gallery_configs.keys())
 
 folder_queue = deque(gallery_names)
 processes = {}  # {gallery_name: (process, start_time)}
@@ -45,16 +46,21 @@ def is_already_running(gallery_name):
     for proc in psutil.process_iter(["pid", "cmdline"]):
         try:
             cmdline = proc.info["cmdline"]
-            if cmdline and "run_gallery.py" in " ".join(cmdline) and gallery_name in " ".join(cmdline):
+            if not cmdline:
+                continue
+            joined = " ".join(cmdline)
+            if ("run_gallery.py" in joined or "run_arca_gallery.py" in joined) and gallery_name in joined:
                 return True
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             continue
     return False
 
 def run_script(gallery_name):
-    """run_gallery.py를 통해 갤러리 크롤러 실행"""
+    """run_gallery.py(또는 arca 갤러리는 run_arca_gallery.py)를 통해 갤러리 크롤러 실행"""
     python_executable = sys.executable
-    process = subprocess.Popen([python_executable, "run_gallery.py", gallery_name])
+    config = gallery_configs.get(gallery_name, {})
+    script = "run_arca_gallery.py" if config.get("type") == "arca" else "run_gallery.py"
+    process = subprocess.Popen([python_executable, script, gallery_name])
     logger.info(f"{gallery_name} 크롤러 실행됨 (PID: {process.pid})")
     return process
 
