@@ -9,7 +9,9 @@ User=ubuntu
 WorkingDirectory=/home/ubuntu/dcinsideImageCrawler
 Environment=WEB_GALLERY=1
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 launcher.py
+Environment=DISPLAY=:99
+ExecStartPre=/bin/bash /home/ubuntu/dcinsideImageCrawler/setup_xvfb.sh
+ExecStart=/home/ubuntu/dcinsideImageCrawler/venv/bin/python3 launcher.py
 Restart=always
 RestartSec=30
 StandardOutput=append:/home/ubuntu/dcinsideImageCrawler/logs/launcher.log

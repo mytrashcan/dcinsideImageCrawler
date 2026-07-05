@@ -50,8 +50,9 @@ class ArcaliveCrawler:
 
         logger.info("아카라이브 크롤러: Chromium 브라우저 시작 중...")
         self._browser = await uc.Browser.create(
-            headless=True,
+            headless=False,
             no_sandbox=True,
+            display=":99",
             browser_args=[
                 "--disable-blink-features=AutomationControlled",
                 "--disable-features=IsolateOrigins,site-per-process",
