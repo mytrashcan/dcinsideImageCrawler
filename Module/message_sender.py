@@ -47,16 +47,16 @@ class MessageSender:
                 logger.debug(f"이미지 검증 성공 ({file_size} bytes)")
                 return True
 
-            except Exception as e:
+            except (OSError, ValueError, SyntaxError) as e:
                 logger.error(f"이미지 버퍼 손상됨: {e}")
                 return False
 
-        except Exception as e:
+        except (OSError, ValueError) as e:
             logger.error(f"이미지 검증 실패: {e}")
             return False
 
-    def _recompress_for_discord(self, channel, image_buffer, filename):
-        """413 응답 후 채널이 속한 서버의 실제 제한에 맞춰 재압축 (실패 시 None)"""
+    def recompress_for_discord(self, channel, image_buffer, filename):
+        """Re-compress image after 413 response using guild's actual limit."""
         image_buffer.seek(0)
         data = image_buffer.read()
         current_size = len(data)
@@ -103,7 +103,7 @@ class MessageSender:
                     raise
                 logger.warning(f"Discord 413 (파일 크기 초과): {filename} — 재압축 후 재시도")
                 recompressed = await asyncio.to_thread(
-                    self._recompress_for_discord, channel, image_buffer, filename
+                    self.recompress_for_discord, channel, image_buffer, filename
                 )
                 if recompressed is None:
                     logger.error(f"Discord 재압축 실패: {filename}")
@@ -122,6 +122,13 @@ class MessageSender:
         except Exception as e:
             logger.error(f"Discord 전송 실패: {type(e).__name__}: {str(e)}")
             return False
+        finally:
+            # 호출부(dcbot)가 같은 버퍼로 여러 채널에 반복 전송하므로,
+            # 성공/실패와 무관하게 항상 읽기 위치를 리셋해 다음 전송에 대비한다.
+            try:
+                image_buffer.seek(0)
+            except (OSError, ValueError):
+                pass
 
     async def send_to_telegram(self, image_buffer, filename=None, is_gif=False, max_retries=3):
         """텔레그램으로 이미지 전송 (GIF는 animation으로, 재시도 포함)"""

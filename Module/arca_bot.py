@@ -276,7 +276,7 @@ class ArcaBot(discord.Client):
                     # 재압축 시도
                     logger.warning(f"[아카라이브] 413 재압축 시도: {filename}")
                     recompressed = await asyncio.to_thread(
-                        self.message_sender._recompress_for_discord,
+                        self.message_sender.recompress_for_discord,
                         channel, buffer, filename,
                     )
                     if recompressed:
