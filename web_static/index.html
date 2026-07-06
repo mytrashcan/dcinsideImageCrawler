@@ -456,6 +456,26 @@
       return /^https?:\/\//i.test(u) ? u : '';
     }
 
+    // ── 원본 이미지 사전 프리페치 ──
+    // 카드가 뷰포트 300px 앞에 들어오면(=곧 보일 가능성이 큼) 원본을 백그라운드로
+    // 미리 받아 브라우저 HTTP 캐시에만 데워둔다(DOM에는 안 넣음 — 보이지 않음,
+    // 전송량은 안 줄지만 화면에 나타난 카드만 대상이라 무제한 프리페치는 아님).
+    // 실제로 호버하면 mouseover 핸들러가 캐시에서 즉시 로드하므로 네트워크
+    // 왕복이 거의 사라지고, 체감 지연은 사실상 180ms 페이드 트랜지션만 남는다.
+    const prefetchObserver = ('IntersectionObserver' in window)
+      ? new IntersectionObserver(entries => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            const card = entry.target;
+            prefetchObserver.unobserve(card);
+            if (card.dataset.fullPrefetched) continue;
+            card.dataset.fullPrefetched = '1';
+            const pre = new Image();
+            pre.src = card.dataset.fullSrc;
+          }
+        }, { rootMargin: '300px 0px', threshold: 0 })
+      : null;
+
     function makeCard(it) {
       // 제목·링크·이미지 URL은 dcinside 게시글에서 오는 신뢰 불가 입력이므로,
       // innerHTML 문자열 조립 대신 DOM API(textContent/프로퍼티)로 넣어 속성/스크립트 주입을 원천 차단한다.
@@ -469,7 +489,10 @@
       const likes = it.likes || 0;
       const src = safeUrl(it.thumb || it.url);
       const full = safeUrl(it.url);
-      if (src !== full && full) article.dataset.fullSrc = full; // 호버 시 원본 교체용
+      if (src !== full && full) {
+        article.dataset.fullSrc = full; // 호버 시 원본 교체용
+        if (prefetchObserver) prefetchObserver.observe(article);
+      }
 
       const imgwrap = document.createElement('div');
       imgwrap.className = 'imgwrap';
@@ -592,7 +615,11 @@
 
       // 사라진(만료된) 이미지는 DOM에서 제거 + 대기열/배치 순서에서도 제거
       for (const [id, el] of cards) {
-        if (!ids.has(id)) { el.remove(); cards.delete(id); }
+        if (!ids.has(id)) {
+          if (prefetchObserver) prefetchObserver.unobserve(el);
+          el.remove();
+          cards.delete(id);
+        }
       }
       displayOrder = displayOrder.filter(id => cards.has(id));
       pendingItems = pendingItems.filter(i => ids.has(i.id));
@@ -656,6 +683,7 @@
     // 시점의 리페인트 자체가 깜빡임으로 보였다. 썸네일은 그 아래서 계속
     // 보이고 있으므로(사라지는 순간이 없음) 이 방식은 구조적으로 깜빡일 수 없다.
     // 훑기만 하는 카드는 썸네일 그대로라 전송량 절감은 유지된다.
+    // 위 프리페치로 이미 브라우저 캐시에 있으면 아래 fetch는 네트워크 없이 즉시 끝난다.
     gallery.addEventListener('mouseover', e => {
       const card = e.target.closest('.card');
       if (!card || !card.dataset.fullSrc || card.dataset.fullLoaded) return;
