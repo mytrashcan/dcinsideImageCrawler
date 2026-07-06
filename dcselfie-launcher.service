@@ -9,7 +9,7 @@ User=ubuntu
 WorkingDirectory=/home/ubuntu/dcinsideImageCrawler
 Environment=WEB_GALLERY=1
 Environment=PYTHONUNBUFFERED=1
-Environment=ARCA_SOCKS_PROXY=socks5://iwhfyfyp-kr-rotate:zkymxt1xhtvf@p.webshare.io:1080
+Environment=ARCA_SOCKS_PROXY=socks5://localhost:1080
 ExecStart=/home/ubuntu/dcinsideImageCrawler/venv/bin/python3 launcher.py
 Restart=always
 RestartSec=30
