@@ -10,6 +10,9 @@ from Module.message_sender import MessageSender
 
 logger = logging.getLogger(__name__)
 
+# 이미지 해시 캐시를 초기화하는 디스코드 채팅 명령어
+CLEAR_CACHE_COMMAND = "!쓰담쓰담"
+
 
 class DCBot(discord.Client):
     def __init__(self, token, base_url, channel_ids, telegram_token, telegram_chat_id, intents):
@@ -68,7 +71,7 @@ class DCBot(discord.Client):
         if message.author == self.user:
             return
 
-        if message.content.strip() == "!쓰담쓰담":
+        if message.content.strip() == CLEAR_CACHE_COMMAND:
             self.image_handler.clear_seen_hashes()
 
             file = discord.File("gaki.png", filename="gaki.png")

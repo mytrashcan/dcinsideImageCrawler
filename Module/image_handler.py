@@ -2,13 +2,13 @@ import hashlib
 import io
 import logging
 import math
-from collections import OrderedDict
 
 import requests
 from bs4 import BeautifulSoup
 from PIL import Image
 
 from Module.config import BS_PARSER, DISCORD_MAX_SIZE, HEADERS, REQUEST_TIMEOUT
+from Module.lru_cache import LRUCache
 
 logger = logging.getLogger(__name__)
 
@@ -21,19 +21,13 @@ MAX_HASH_CACHE_SIZE = 1000
 
 class ImageHandler:
     def __init__(self):
-        self._seen_hashes = OrderedDict()
+        self._seen_hashes = LRUCache(MAX_HASH_CACHE_SIZE)
         self.session = requests.Session()
         self.session.headers.update(HEADERS)
 
-    def _check_hash(self, content_hash):
-        """해시 중복 체크 (크기 제한 적용)"""
-        if content_hash in self._seen_hashes:
-            self._seen_hashes.move_to_end(content_hash)
-            return True
-        if len(self._seen_hashes) >= MAX_HASH_CACHE_SIZE:
-            self._seen_hashes.popitem(last=False)
-        self._seen_hashes[content_hash] = None
-        return False
+    def is_duplicate(self, content_hash):
+        """이미 처리한 이미지 해시인지 확인하고 기록한다. 이미 봤으면 True."""
+        return self._seen_hashes.add_if_absent(content_hash)
 
     def clear_seen_hashes(self):
         """중복 체크용 해시 캐시 초기화"""
@@ -100,7 +94,8 @@ class ImageHandler:
             buffer.seek(0)
             return buffer, original_size
 
-        except Exception as e:
+        except (OSError, ValueError) as e:
+            # PIL 디코딩/저장 오류는 대부분 OSError(UnidentifiedImageError 포함)·ValueError
             logger.error(f"[GIF 압축 에러] {filename}: {e}")
             buffer = io.BytesIO(image_data)
             return buffer, len(image_data)
@@ -145,7 +140,7 @@ class ImageHandler:
             buffer.seek(0)
             return buffer, original_size
 
-        except Exception as e:
+        except (OSError, ValueError) as e:
             logger.error(f"[이미지 압축 에러] {filename}: {e}")
             buffer = io.BytesIO(image_data)
             return buffer, len(image_data)
@@ -218,7 +213,7 @@ class ImageHandler:
 
                 # 해시로 중복 체크
                 content_hash = hashlib.sha256(image_data).hexdigest()
-                if self._check_hash(content_hash):
+                if self.is_duplicate(content_hash):
                     logger.info(f"동일한 파일이 존재합니다. PASS: {filename}")
                     continue
 
