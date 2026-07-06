@@ -27,6 +27,8 @@ from fastapi import FastAPI, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from Module.lru_cache import LRUCache
+
 ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 
 
@@ -210,6 +212,34 @@ def _remaining_ttl(name: str) -> int:
 # 이미지 id는 uuid4().hex(32 hex) + 허용 확장자. 경로 조작/임의 파일 접근 방지용 검증.
 _ID_RE = re.compile(r"^[0-9a-f]{32}\.(jpg|jpeg|png|gif|webp)$")
 _like_lock = threading.Lock()
+
+# 클라이언트 localStorage 기반 1회 제한은 우회 가능하므로(스크립트로 반복 호출),
+# 서버에서도 IP 기준 최소 방어선을 둔다: (IP, 이미지) 조합당 1회 + IP당 분당 호출 수 제한.
+_like_ip_seen = LRUCache(5000)
+_like_ip_rate: dict[str, tuple[int, float]] = {}
+_LIKE_RATE_WINDOW = 60.0
+_LIKE_RATE_MAX = 30
+
+
+def _client_ip(request: Request) -> str:
+    """Cloudflare 경유 시 실제 클라이언트 IP, 아니면 소켓 상의 IP."""
+    return request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "unknown")
+
+
+def _like_rate_limited(ip: str) -> bool:
+    """IP당 분당 좋아요 호출 수 제한. 초과 시 True."""
+    now = time.time()
+    count, start = _like_ip_rate.get(ip, (0, now))
+    if now - start > _LIKE_RATE_WINDOW:
+        count, start = 0, now
+    count += 1
+    _like_ip_rate[ip] = (count, start)
+    if len(_like_ip_rate) > 10000:  # 매핑이 무한정 커지지 않도록 만료분 청소
+        cutoff = now - _LIKE_RATE_WINDOW
+        for k, (_, s) in list(_like_ip_rate.items()):
+            if s < cutoff:
+                del _like_ip_rate[k]
+    return count > _LIKE_RATE_MAX
 
 
 def like_image(image_id: str):
@@ -515,7 +545,20 @@ def create_app() -> FastAPI:
         return resp
 
     @app.post("/like/{image_id}")
-    async def like(image_id: str):
+    async def like(image_id: str, request: Request):
+        ip = _client_ip(request)
+        if _like_rate_limited(ip):
+            return JSONResponse({"error": "too many requests"}, status_code=429)
+        if _like_ip_seen.add_if_absent((ip, image_id)):
+            # 같은 IP가 이 이미지에 이미 좋아요를 누른 적 있음 — 증가 없이 현재 값만 반환
+            if not _ID_RE.match(image_id or ""):
+                return JSONResponse({"error": "not found"}, status_code=404)
+            up = _upload_dir()
+            image = up / image_id
+            if not image.is_file():
+                return JSONResponse({"error": "not found"}, status_code=404)
+            n = _read_meta(up, image_id, image.stat().st_mtime)["likes"]
+            return JSONResponse({"id": image_id, "likes": n})
         n = like_image(image_id)
         if n is None:
             return JSONResponse({"error": "not found"}, status_code=404)

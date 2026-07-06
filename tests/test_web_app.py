@@ -182,3 +182,47 @@ def test_pwa_manifest_is_served(monkeypatch, tmp_path):
     m = r.json()
     assert m["display"] == "standalone"
     assert any(i["sizes"] == "512x512" for i in m["icons"])
+
+
+def test_like_same_ip_does_not_increment_twice(monkeypatch, tmp_path):
+    import web_app
+    monkeypatch.setattr(web_app, "_like_ip_seen", web_app.LRUCache(100))
+    monkeypatch.setattr(web_app, "_like_ip_rate", {})
+
+    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
+    item = save_bytes_to_gallery(PNG_BYTES, "like.png", "title", "")
+
+    r1 = client.post(f"/like/{item['id']}")
+    r2 = client.post(f"/like/{item['id']}")
+    # localStorage 우회(같은 IP가 스크립트로 반복 호출)해도 서버에서 중복 증가를 막는다.
+    assert r1.json()["likes"] == 1
+    assert r2.json()["likes"] == 1
+
+
+def test_like_different_ip_can_still_increment(monkeypatch, tmp_path):
+    import web_app
+    monkeypatch.setattr(web_app, "_like_ip_seen", web_app.LRUCache(100))
+    monkeypatch.setattr(web_app, "_like_ip_rate", {})
+
+    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
+    item = save_bytes_to_gallery(PNG_BYTES, "like2.png", "title", "")
+
+    r1 = client.post(f"/like/{item['id']}", headers={"cf-connecting-ip": "1.1.1.1"})
+    r2 = client.post(f"/like/{item['id']}", headers={"cf-connecting-ip": "2.2.2.2"})
+    assert r1.json()["likes"] == 1
+    assert r2.json()["likes"] == 2
+
+
+def test_like_rate_limit_returns_429_past_threshold(monkeypatch, tmp_path):
+    import web_app
+    monkeypatch.setattr(web_app, "_like_ip_seen", web_app.LRUCache(100))
+    monkeypatch.setattr(web_app, "_like_ip_rate", {})
+    monkeypatch.setattr(web_app, "_LIKE_RATE_MAX", 3)
+
+    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
+    items = [save_bytes_to_gallery(PNG_BYTES, f"rl{i}.png", "title", "") for i in range(5)]
+
+    headers = {"cf-connecting-ip": "9.9.9.9"}
+    statuses = [client.post(f"/like/{it['id']}", headers=headers).status_code for it in items]
+    assert statuses[:3] == [200, 200, 200]
+    assert 429 in statuses[3:]

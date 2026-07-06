@@ -16,6 +16,8 @@ from web_app import create_app
 load_dotenv()  # .env에서 TURNSTILE_SITEKEY/SECRET 등 로드
 
 if __name__ == "__main__":
-    host = os.getenv("WEB_HOST", "0.0.0.0")
+    # 기본값은 로컬 전용(127.0.0.1) — 외부 공개는 리버스 프록시(Caddy 등)를 통해서만.
+    # 프록시 없이 직접 공개하려면 WEB_HOST=0.0.0.0 을 명시적으로 지정한다.
+    host = os.getenv("WEB_HOST", "127.0.0.1")
     port = int(os.getenv("WEB_PORT", "8000"))
     uvicorn.run(create_app(), host=host, port=port, log_level="info")

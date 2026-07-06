@@ -160,7 +160,7 @@ python run_web_gallery.py <gallery_name>
 | `/feed?limit=N` | JSON feed of recent items (`limit` 1-200, default 60) |
 | `/healthz` | Health check (`{ok, items, ttl}`) |
 
-> The server binds to `0.0.0.0:8000` by default so it is reachable from outside the host. There is no authentication - put it behind a reverse proxy / firewall, or set `WEB_HOST=127.0.0.1` if you only want local access. Image responses are served with `Cache-Control: public, max-age=<remaining TTL>, immutable` - browsers/CDNs may cache each image, but only until its TTL expires, so expired gallery images never outlive the TTL in any cache while edge caching still offloads the origin.
+> The server binds to `127.0.0.1:8000` by default (local only) - put a reverse proxy (Caddy, `cloudflared`, etc.) in front for public access, or set `WEB_HOST=0.0.0.0` explicitly if you really want it directly reachable. There is no authentication on `/feed`. Image responses are served with `Cache-Control: public, max-age=<remaining TTL>, immutable` - browsers/CDNs may cache each image, but only until its TTL expires, so expired gallery images never outlive the TTL in any cache while edge caching still offloads the origin.
 
 ### Terminal monitor
 
@@ -282,7 +282,7 @@ dcinsideImageCrawler/
 | Crawl interval | `Module/dcbot.py` | 20-40s | Random delay between crawls |
 | Arca crawl interval | `Module/arca_bot.py` | 30-60s | Random delay between arcalive crawls |
 | `WEB_GALLERY` | env | unset | Set to `1` so `launcher.py`/`run_gallery.py` crawlers also feed the web gallery |
-| `WEB_HOST` | env | `0.0.0.0` | Web gallery bind address |
+| `WEB_HOST` | env | `127.0.0.1` | Web gallery bind address (set `0.0.0.0` to expose directly, without a reverse proxy) |
 | `WEB_PORT` | env | 8000 | Web gallery port |
 | `WEB_IMAGE_TTL_SECONDS` | env | 10800 (3h) | How long an image stays in the feed before it expires and is deleted |
 | `WEB_FEED_MAX_ITEMS` | env | 120 | Max images kept in the feed; older ones are pruned and deleted |
