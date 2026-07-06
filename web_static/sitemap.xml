@@ -10,6 +10,10 @@
     <changefreq>monthly</changefreq>
   </url>
   <url>
+    <loc>https://dcselfie.win/changelog</loc>
+    <changefreq>weekly</changefreq>
+  </url>
+  <url>
     <loc>https://dcselfie.win/request</loc>
     <changefreq>monthly</changefreq>
   </url>

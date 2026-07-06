@@ -438,6 +438,10 @@ def create_app() -> FastAPI:
     async def about():
         return _page("about.html")
 
+    @app.get("/changelog", response_class=HTMLResponse)
+    async def changelog():
+        return _page("changelog.html")
+
     @app.get("/request", response_class=HTMLResponse)
     async def request_gallery():
         return _page("request.html")
