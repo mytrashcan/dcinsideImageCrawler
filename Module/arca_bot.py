@@ -122,7 +122,6 @@ class ArcaBot(discord.Client):
                 discord_buffer, telegram_buffer, is_gif = await asyncio.to_thread(
                     self.image_handler.process_image,
                     buffer_data, img_info["filename"],
-                    True,  # skip_telegram — 아카라이브는 Telegram 미사용
                 )
 
                 content_hash = hashlib.sha256(buffer_data).hexdigest()
