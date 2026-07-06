@@ -14,10 +14,10 @@ Both crawlers share the same image pipeline (`ImageHandler` for compression/dedu
 ## Features
 
 - Scrapes images from DCInside and automatically posts to Discord and Telegram
-- Arcalive (arca.live) crawler with Cloudflare bypass via `cloudscraper`
+- Arcalive (arca.live) crawler using `cloudscraper`; when hosted on a cloud VM, a home-machine SOCKS proxy handles the Cloudflare managed challenge that flags datacenter IPs (see "Arcalive: Cloudflare bypass" below)
 - All-image extraction per post (Arcalive) vs single-image extraction (DCInside, spam prevention)
 - Discord multi-embed delivery for Arcalive (up to 10 images per message)
-- Both crawlers share the same ephemeral web gallery
+- Both crawlers share the same ephemeral web gallery, with a source filter (DCInside / Arcalive / per-gallery) in the UI
 - Works seamlessly on cloud environments like Oracle Cloud
 - Supports multiple image formats (JPG, PNG, GIF) with automatic compression
   - Compression runs once and is reused for both platforms when their size limits match
@@ -25,6 +25,7 @@ Both crawlers share the same image pipeline (`ImageHandler` for compression/dedu
 - Fast HTML parsing via `lxml` + `SoupStrainer` (falls back to `html.parser` if lxml is unavailable)
 - Config-driven gallery management via `galleries.json` - no code changes needed to add new galleries
 - Optional **ephemeral web gallery** - serves collected images in a near real-time, Pinterest-style masonry feed (titles link to the source post) that auto-expires (TTL/item-cap), no persistent storage
+  - Installable as a PWA, ships `sitemap.xml`/`robots.txt`/`security.txt`, optional Cloudflare Turnstile bot gate and AdSense hooks
 - Duplicate image detection via SHA256 hashing
 - Multi-process architecture for concurrent gallery crawling
 - Test suite (pytest) and lint (ruff) enforced by GitHub Actions CI
@@ -181,6 +182,35 @@ DASH_BASE_URL=https://dcselfie.win python dashboard.py
 
 The crawler-process panel (PID/memory/uptime) can't be shown this way - `psutil` only sees processes on the machine it runs on - so it's replaced with an SSH hint. To see crawler status, run `./dcselfie.sh status` or `python dashboard.py` directly on the server (e.g. over SSH).
 
+## Arcalive: Cloudflare bypass for cloud-hosted crawlers
+
+`cloudscraper` alone gets Arcalive's older JS challenge, but arca.live also serves a **Cloudflare managed challenge** to IPs with a datacenter reputation (Oracle Cloud, AWS, etc.) - a real browser is required to solve it, and headless Chromium on a cloud VM tends to get flagged too (tried and reverted; see git history for `nodriver`/Xvfb attempts). A residential IP (e.g. a home Mac) is not challenged at all.
+
+The fix: route only the Arcalive crawler's requests through a home machine via a **reverse SOCKS proxy over SSH**, so arca.live sees a residential IP while everything else (DCInside, image downloads from the `namu.la` CDN, the web gallery) still runs directly on the cloud VM.
+
+```bash
+# On the home machine (Mac): open a reverse dynamic (SOCKS) forward to the server.
+# No destination after the port -> ssh itself acts as the SOCKS proxy and opens
+# the real outbound connection *from this machine*.
+ssh -N -R 1080 ubuntu@<server-ip>
+```
+
+`com.dcselfie.arca-tunnel.plist` wraps this in `autossh` as a macOS LaunchAgent (auto-reconnect, starts at login):
+```bash
+cp com.dcselfie.arca-tunnel.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.dcselfie.arca-tunnel.plist
+```
+On the server, point the crawler at the tunnel and restart:
+```bash
+echo 'ARCA_SOCKS_PROXY=socks5://localhost:1080' >> .env
+sudo systemctl restart dcselfie-launcher
+```
+Verify the egress IP actually changed: `curl -x socks5h://localhost:1080 https://ifconfig.co` should print the home machine's IP, not the server's.
+
+> ⚠️ **Don't combine `-D` with `-R` for this** (e.g. `-R 1080:localhost:1080` on top of `-D 1080`) - that routes the "reverse" connection back into the `-D` proxy on the *same* machine, which loops the traffic back out through the server instead of the home machine, silently defeating the whole point.
+>
+> ⚠️ **Never hardcode `ARCA_SOCKS_PROXY` (or any proxy credentials) directly in a git-tracked file** like a `.service` unit - this repo is public, and a proxy password committed to a tracked file stays in git history forever even after removal. Keep it in the server's `.env` only (gitignored); `launcher.py` already loads it via `python-dotenv`, no systemd `Environment=` line needed.
+
 ## Deploying the web gallery
 
 Two common setups:
@@ -190,27 +220,19 @@ Two common setups:
 
 ## Running on a server (e.g. Oracle Cloud)
 
-Run the launcher as a systemd service so it survives reboots and SSH disconnects:
+Run the launcher and web server as systemd services so they survive reboots and SSH disconnects. This repo ships the actual unit files used in production (`dcselfie.win`) as a reference:
 
-```ini
-# /etc/systemd/system/dccrawler.service
-[Unit]
-Description=DCInside Image Crawler
-After=network-online.target
-
-[Service]
-WorkingDirectory=/home/ubuntu/dcinsideImageCrawler
-ExecStart=/home/ubuntu/dcinsideImageCrawler/venv/bin/python launcher.py
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
+- [`dcselfie-launcher.service`](dcselfie-launcher.service) - crawlers (`WEB_GALLERY=1 launcher.py`)
+- [`dcselfie-web.service`](dcselfie-web.service) - web gallery, bound to `127.0.0.1:8000` (put a reverse proxy like Caddy in front for the public domain + HTTPS)
 
 ```bash
-sudo systemctl enable --now dccrawler
+sudo cp dcselfie-launcher.service dcselfie-web.service /etc/systemd/system/
+# edit WorkingDirectory/User inside if your paths differ, then:
+sudo systemctl daemon-reload
+sudo systemctl enable --now dcselfie-launcher dcselfie-web
 ```
+
+Secrets (`DISCORD_TOKEN`, `ARCA_SOCKS_PROXY`, etc.) go in the project's `.env`, never in the unit files - see the warning in "Arcalive: Cloudflare bypass" above.
 
 Notes for small instances (1 GB RAM free tier):
 - The launcher runs up to `MAX_PROCESSES` (default 5) Python processes at once; each loads discord.py and Pillow. Lower `MAX_PROCESSES` in `launcher.py` if memory is tight.
@@ -232,6 +254,10 @@ dcinsideImageCrawler/
 ├── requirements-dev.txt   # Dev dependencies (pytest, ruff)
 ├── pyproject.toml         # pytest & ruff configuration
 ├── .github/workflows/ci.yml  # CI: lint + tests on Python 3.11/3.12
+├── dcselfie-launcher.service  # systemd unit: crawlers (see "Running on a server")
+├── dcselfie-web.service       # systemd unit: web gallery
+├── com.dcselfie.arca-tunnel.plist  # macOS LaunchAgent: reverse SOCKS tunnel for Arcalive
+├── dcselfie.sh             # macOS launchd management CLI (install/start/stop/status/dash)
 ├── Module/
 │   ├── config.py          # Environment variables, headers, logging setup
 │   ├── crawler.py         # DCInside page scraping
@@ -239,7 +265,9 @@ dcinsideImageCrawler/
 │   ├── arca_crawler.py    # Arcalive page scraping
 │   ├── arca_bot.py        # Arcalive Discord bot client
 │   ├── image_handler.py   # Image downloading, deduplication, compression
-│   └── message_sender.py  # Discord & Telegram message delivery
+│   ├── message_sender.py  # Discord & Telegram message delivery
+│   ├── embeds.py          # Shared Discord image-embed builder
+│   └── lru_cache.py       # Shared bounded-cache used for dedup across crawlers
 └── tests/                 # pytest test suite
 ```
 
@@ -260,6 +288,9 @@ dcinsideImageCrawler/
 | `WEB_FEED_MAX_ITEMS` | env | 120 | Max images kept in the feed; older ones are pruned and deleted |
 | `WEB_STATIC_DIR` | env | `web_static` | Directory for the gallery page and temporary images |
 | `WEB_THUMB_WIDTH` | env | 480 | Max card-thumbnail width in px (`0` disables thumbnailing) |
+| `WEB_MAINTENANCE` | env | unset | Set to `1` to force the maintenance page (`503`). A `.maintenance` flag file next to the project (toggled by `./dcselfie.sh down` / `up`, no restart needed) has the same effect |
+| `ARCA_SOCKS_PROXY` | `.env` (never commit) | unset | `socks5://...` proxy the Arcalive crawler routes through - see "Arcalive Cloudflare bypass" below |
+| `TURNSTILE_SITEKEY` / `TURNSTILE_SECRET` | `.env` (never commit) | unset | Cloudflare Turnstile bot gate for the web gallery; unset disables it entirely |
 
 ## Development
 
