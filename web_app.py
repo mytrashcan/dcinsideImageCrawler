@@ -220,26 +220,32 @@ _like_ip_rate: dict[str, tuple[int, float]] = {}
 _LIKE_RATE_WINDOW = 60.0
 _LIKE_RATE_MAX = 30
 
+# /feed 폴링 남용(스크래핑 등) 방지용 IP별 속도 제한. 프론트는 5초마다 폴링(분당
+# 12회)하므로, 여러 탭/공유 IP를 감안해 정상 사용은 절대 안 걸릴 만큼 여유를 둔다.
+_feed_ip_rate: dict[str, tuple[int, float]] = {}
+_FEED_RATE_WINDOW = 60.0
+_FEED_RATE_MAX = 120
+
 
 def _client_ip(request: Request) -> str:
     """Cloudflare 경유 시 실제 클라이언트 IP, 아니면 소켓 상의 IP."""
     return request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "unknown")
 
 
-def _like_rate_limited(ip: str) -> bool:
-    """IP당 분당 좋아요 호출 수 제한. 초과 시 True."""
+def _rate_limited(bucket: dict, ip: str, window: float, max_count: int) -> bool:
+    """슬라이딩 윈도우 방식 IP별 요청 수 제한. 용도별로 별도 bucket을 넘겨 재사용한다."""
     now = time.time()
-    count, start = _like_ip_rate.get(ip, (0, now))
-    if now - start > _LIKE_RATE_WINDOW:
+    count, start = bucket.get(ip, (0, now))
+    if now - start > window:
         count, start = 0, now
     count += 1
-    _like_ip_rate[ip] = (count, start)
-    if len(_like_ip_rate) > 10000:  # 매핑이 무한정 커지지 않도록 만료분 청소
-        cutoff = now - _LIKE_RATE_WINDOW
-        for k, (_, s) in list(_like_ip_rate.items()):
+    bucket[ip] = (count, start)
+    if len(bucket) > 10000:  # 매핑이 무한정 커지지 않도록 만료분 청소
+        cutoff = now - window
+        for k, (_, s) in list(bucket.items()):
             if s < cutoff:
-                del _like_ip_rate[k]
-    return count > _LIKE_RATE_MAX
+                del bucket[k]
+    return count > max_count
 
 
 def like_image(image_id: str):
@@ -409,7 +415,9 @@ def create_app() -> FastAPI:
     static_dir = _static_dir()
     _upload_dir()  # 정적 마운트 전에 디렉터리 보장
     static_dir.mkdir(parents=True, exist_ok=True)
-    app = FastAPI(title="dcinsideImageCrawler Gallery")
+    # 공개용 이미지 피드일 뿐 소비 대상 API가 아니므로 대화형 문서/스키마는 끈다
+    # (불필요한 내부 라우트 노출 방지).
+    app = FastAPI(title="dcinsideImageCrawler Gallery", docs_url=None, redoc_url=None, openapi_url=None)
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
     def _page(name: str) -> HTMLResponse:
@@ -438,6 +446,21 @@ def create_app() -> FastAPI:
         elif path == "/feed" or path == "/":
             # 실시간 피드/페이지는 절대 캐시 금지 (캐시되면 새 자짤이 안 뜸)
             resp.headers["Cache-Control"] = "no-store"
+        return resp
+
+    @app.middleware("http")
+    async def security_headers(request, call_next):
+        resp = await call_next(request)
+        # 클릭재킹/MIME 스니핑/과도한 리퍼러 유출 방지 + HTTPS 유지. 부작용 위험이
+        # 없는 헤더만 넣는다. CSP는 넣지 않음: 이 사이트는 AdSense/GA/Turnstile
+        # 스크립트를 쓰고 페이지 자체 로직도 인라인 <script>라, 제대로 안 맞춘 CSP는
+        # 광고 심사 중인 지금 애드센스나 사이트 기능 자체를 조용히 깨뜨릴 수 있다.
+        # 도입하려면 Content-Security-Policy-Report-Only로 먼저 위반 로그를 보고
+        # 점진적으로 좁혀야 한다(현재 인프라로는 라이브 검증 불가).
+        resp.headers["X-Content-Type-Options"] = "nosniff"
+        resp.headers["X-Frame-Options"] = "DENY"
+        resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        resp.headers["Strict-Transport-Security"] = "max-age=15552000"
         return resp
 
     def _maintenance_response() -> HTMLResponse:
@@ -517,6 +540,8 @@ def create_app() -> FastAPI:
 
     @app.get("/feed")
     async def feed(request: Request, limit: int = Query(60, ge=1, le=200)):
+        if _rate_limited(_feed_ip_rate, _client_ip(request), _FEED_RATE_WINDOW, _FEED_RATE_MAX):
+            return JSONResponse({"error": "too many requests"}, status_code=429)
         if _maintenance_on() and request.headers.get("cf-connecting-ip"):
             return JSONResponse({"error": "maintenance"}, status_code=503)
         # Cloudflare를 거친 공개 요청(cf-connecting-ip 존재)만 Turnstile 통과를 요구한다.
@@ -547,7 +572,7 @@ def create_app() -> FastAPI:
     @app.post("/like/{image_id}")
     async def like(image_id: str, request: Request):
         ip = _client_ip(request)
-        if _like_rate_limited(ip):
+        if _rate_limited(_like_ip_rate, ip, _LIKE_RATE_WINDOW, _LIKE_RATE_MAX):
             return JSONResponse({"error": "too many requests"}, status_code=429)
         if _like_ip_seen.add_if_absent((ip, image_id)):
             # 같은 IP가 이 이미지에 이미 좋아요를 누른 적 있음 — 증가 없이 현재 값만 반환

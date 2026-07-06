@@ -226,3 +226,30 @@ def test_like_rate_limit_returns_429_past_threshold(monkeypatch, tmp_path):
     statuses = [client.post(f"/like/{it['id']}", headers=headers).status_code for it in items]
     assert statuses[:3] == [200, 200, 200]
     assert 429 in statuses[3:]
+
+
+def test_api_docs_are_disabled(monkeypatch, tmp_path):
+    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
+    for path in ("/docs", "/redoc", "/openapi.json"):
+        assert client.get(path).status_code == 404
+
+
+def test_security_headers_present_on_every_response(monkeypatch, tmp_path):
+    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
+    r = client.get("/feed")
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert r.headers["x-frame-options"] == "DENY"
+    assert r.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert "max-age=" in r.headers["strict-transport-security"]
+
+
+def test_feed_rate_limit_returns_429_past_threshold(monkeypatch, tmp_path):
+    import web_app
+    monkeypatch.setattr(web_app, "_feed_ip_rate", {})
+    monkeypatch.setattr(web_app, "_FEED_RATE_MAX", 3)
+
+    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
+    headers = {"cf-connecting-ip": "8.8.8.8"}
+    statuses = [client.get("/feed", headers=headers).status_code for _ in range(5)]
+    assert statuses[:3] == [200, 200, 200]
+    assert 429 in statuses[3:]
