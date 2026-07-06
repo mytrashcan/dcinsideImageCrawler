@@ -268,6 +268,22 @@
     }
     .card .imgwrap { position: relative; }
     .card .imgwrap img { -webkit-user-select: none; user-select: none; cursor: zoom-in; }
+    /* 호버 시 원본을 썸네일 위에 겹쳐두고 로드 완료 후 페이드인 → 썸네일이 화면에서
+       사라지는 순간이 절대 없어 교체 시 깜빡임이 생길 수 없다(크로스페이드). */
+    .card .imgwrap img.full-img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0;
+      pointer-events: none;  /* 로드 전에는 우클릭/클릭이 아래 썸네일로 그대로 통과 */
+      transition: opacity .18s ease;
+    }
+    .card .imgwrap img.full-img.loaded {
+      opacity: 1;
+      pointer-events: auto;  /* 로드 후에만 우클릭 복사·클릭 대상이 원본이 되도록 */
+    }
     #lightbox {
       position: fixed;
       inset: 0;
@@ -633,28 +649,26 @@
         .catch(() => {});
     }
 
-    // ── 호버 시 원본으로 교체 ──
+    // ── 호버 시 원본으로 교체 (크로스페이드) ──
     // 복사/저장하려면 어차피 마우스를 이미지 위에 올려야 하므로, 호버하는 순간
-    // 백그라운드로 원본을 받아 조용히 교체한다. 우클릭 복사 시점엔 원본 화질.
+    // 원본을 썸네일 위에 투명하게 겹쳐 로드하고, 로드 완료 후 페이드인한다.
+    // 기존 img.src를 직접 바꾸는 방식은 decode() 로 미리 디코딩해둬도 교체
+    // 시점의 리페인트 자체가 깜빡임으로 보였다. 썸네일은 그 아래서 계속
+    // 보이고 있으므로(사라지는 순간이 없음) 이 방식은 구조적으로 깜빡일 수 없다.
     // 훑기만 하는 카드는 썸네일 그대로라 전송량 절감은 유지된다.
     gallery.addEventListener('mouseover', e => {
       const card = e.target.closest('.card');
       if (!card || !card.dataset.fullSrc || card.dataset.fullLoaded) return;
       card.dataset.fullLoaded = '1';
-      const img = card.querySelector('.imgwrap img');
-      if (!img) return;
-      const full = card.dataset.fullSrc;
-      const pre = new Image();
-      pre.src = full;
-      const swap = () => { img.src = full; };
-      // decode()로 디코딩까지 끝낸 뒤 교체 → img의 decoding=async 힌트 때문에
-      // src 대입과 실제 페인트 사이에 텀이 생겨 느리고 깜빡이던 문제 해결.
-      // (교체 시점엔 이미 디코드 캐시에 있어 재디코딩 없이 즉시 반영됨)
-      if (pre.decode) {
-        pre.decode().then(swap).catch(swap);
-      } else {
-        pre.onload = swap; // decode() 미지원 구형 브라우저 폴백
-      }
+      const wrap = card.querySelector('.imgwrap');
+      if (!wrap) return;
+      const fullImg = document.createElement('img');
+      fullImg.className = 'full-img';
+      fullImg.alt = '';
+      fullImg.decoding = 'async';
+      fullImg.onload = () => { fullImg.classList.add('loaded'); };
+      fullImg.src = card.dataset.fullSrc;
+      wrap.appendChild(fullImg);
     });
 
     // ── 원본 라이트박스 (이미지 클릭 → 원본 화질로 크게, 거기서 복사/저장) ──
