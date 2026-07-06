@@ -1,0 +1,16 @@
+[Unit]
+Description=dcselfie web gallery
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/dcinsideImageCrawler
+Environment=WEB_HOST=127.0.0.1
+Environment=WEB_PORT=8000
+ExecStart=/home/ubuntu/dcinsideImageCrawler/venv/bin/python run_web_server.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
