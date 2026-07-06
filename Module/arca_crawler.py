@@ -50,10 +50,10 @@ def _create_session():
 class ArcaliveCrawler:
     """아카라이브 게시글 크롤러."""
 
-    def __init__(self, base_url):
+    def __init__(self, base_url, session=None):
         self.base_url = base_url
         self.sent_items = LRUCache()
-        self.session = _create_session()
+        self.session = session or _create_session()
 
     # ---------- 포스트 목록 파싱 ----------
 

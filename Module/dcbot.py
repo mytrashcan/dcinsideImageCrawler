@@ -60,7 +60,6 @@ class DCBot(discord.Client):
                     await self.message_sender.send_to_discord(
                         channel, title, discord_buffer, filename, link
                     )
-                    discord_buffer.seek(0)
 
             await self.message_sender.send_to_telegram(telegram_buffer, filename, is_gif)
 
