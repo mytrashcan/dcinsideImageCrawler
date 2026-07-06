@@ -643,9 +643,18 @@
       card.dataset.fullLoaded = '1';
       const img = card.querySelector('.imgwrap img');
       if (!img) return;
+      const full = card.dataset.fullSrc;
       const pre = new Image();
-      pre.onload = () => { img.src = card.dataset.fullSrc; };
-      pre.src = card.dataset.fullSrc;
+      pre.src = full;
+      const swap = () => { img.src = full; };
+      // decode()로 디코딩까지 끝낸 뒤 교체 → img의 decoding=async 힌트 때문에
+      // src 대입과 실제 페인트 사이에 텀이 생겨 느리고 깜빡이던 문제 해결.
+      // (교체 시점엔 이미 디코드 캐시에 있어 재디코딩 없이 즉시 반영됨)
+      if (pre.decode) {
+        pre.decode().then(swap).catch(swap);
+      } else {
+        pre.onload = swap; // decode() 미지원 구형 브라우저 폴백
+      }
     });
 
     // ── 원본 라이트박스 (이미지 클릭 → 원본 화질로 크게, 거기서 복사/저장) ──
