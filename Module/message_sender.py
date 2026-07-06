@@ -6,7 +6,11 @@ from PIL import Image
 from telegram import Bot
 from telegram.request import HTTPXRequest
 
+from Module.embeds import make_image_embed
+
 logger = logging.getLogger(__name__)
+
+DISCORD_EMBED_COLOR = 0xFF5733
 
 
 class MessageSender:
@@ -87,12 +91,7 @@ class MessageSender:
                 logger.error("Discord 전송 취소: 이미지 검증 실패")
                 return False
 
-            embed = discord.Embed(
-                title=title,
-                url=url,
-                color=0xFF5733
-            )
-            embed.set_image(url=f"attachment://{filename}")
+            embed = make_image_embed(filename, title=title, url=url, color=DISCORD_EMBED_COLOR)
 
             try:
                 await channel.send(

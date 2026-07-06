@@ -24,20 +24,20 @@ def make_gif_bytes(frames=3, size=(64, 64)):
 class TestHashCache:
     def test_first_time_returns_false_then_true(self):
         handler = ImageHandler()
-        assert handler._check_hash("abc") is False
-        assert handler._check_hash("abc") is True
+        assert handler.is_duplicate("abc") is False
+        assert handler.is_duplicate("abc") is True
 
     def test_cache_is_bounded(self):
         handler = ImageHandler()
         for i in range(MAX_HASH_CACHE_SIZE + 10):
-            handler._check_hash(str(i))
+            handler.is_duplicate(str(i))
         assert len(handler._seen_hashes) <= MAX_HASH_CACHE_SIZE
 
     def test_clear(self):
         handler = ImageHandler()
-        handler._check_hash("abc")
+        handler.is_duplicate("abc")
         handler.clear_seen_hashes()
-        assert handler._check_hash("abc") is False
+        assert handler.is_duplicate("abc") is False
 
 
 class TestProcessImage:

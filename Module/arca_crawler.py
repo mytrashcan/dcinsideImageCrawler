@@ -13,7 +13,7 @@ from urllib.parse import urljoin
 import cloudscraper
 from bs4 import BeautifulSoup, SoupStrainer
 
-from Module.crawler import BoundedSet
+from Module.lru_cache import LRUCache
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ class ArcaliveCrawler:
 
     def __init__(self, base_url):
         self.base_url = base_url
-        self.sent_items = BoundedSet()
+        self.sent_items = LRUCache()
         self.session = _create_session()
 
     # ---------- 포스트 목록 파싱 ----------

@@ -14,13 +14,17 @@ import os
 import random
 
 import discord
+import requests
 
 from Module.arca_crawler import ArcaliveCrawler
+from Module.embeds import make_image_embed
 from Module.image_handler import ImageHandler
 from Module.message_sender import MessageSender
 
 logger = logging.getLogger(__name__)
 
+# 아카라이브 임베드 색상 (블루 계열)
+ARCA_EMBED_COLOR = 0x00A3FF
 # Discord 메시지당 최대 임베드/파일 수
 MAX_EMBEDS_PER_MSG = 10
 # 게시글당 최대 이미지 수 (초과분은 무시)
@@ -93,7 +97,18 @@ class ArcaBot(discord.Client):
         link = post["link"]
         logger.info(f"[아카라이브] {title}: {len(images)}개 이미지 추출됨")
 
-        # 이미지 URL을 메모리 버퍼로 다운로드 + 압축 처리
+        downloaded = await self._download_and_process(images, link)
+        if not downloaded:
+            logger.info(f"[아카라이브] 다운로드 성공한 이미지 없음: {title}")
+            return
+
+        # 배치 처리: MAX_EMBEDS_PER_MSG개씩 나눠서 전송
+        for batch_start in range(0, len(downloaded), MAX_EMBEDS_PER_MSG):
+            batch = downloaded[batch_start : batch_start + MAX_EMBEDS_PER_MSG]
+            await self._send_image_batch(batch, title, link, batch_start)
+
+    async def _download_and_process(self, images: list[dict], link: str) -> list[dict]:
+        """이미지 URL 목록을 다운로드→압축→중복제거하여 전송 가능한 버퍼 목록으로 만든다."""
         downloaded = []
         for img_info in images:
             try:
@@ -110,7 +125,7 @@ class ArcaBot(discord.Client):
                 )
 
                 content_hash = hashlib.sha256(buffer_data).hexdigest()
-                if self.image_handler._check_hash(content_hash):
+                if self.image_handler.is_duplicate(content_hash):
                     logger.info(f"[아카라이브] 중복 이미지 스킵: {img_info['filename']}")
                     continue
 
@@ -120,35 +135,25 @@ class ArcaBot(discord.Client):
                     "filename": img_info["filename"],
                     "is_gif": is_gif,
                 })
-            except Exception as e:
+            except (OSError, ValueError) as e:
                 logger.warning(f"[아카라이브] 이미지 처리 실패 ({img_info['filename']}): {e}")
                 continue
 
             # CDN rate limit 방지
             await asyncio.sleep(IMAGE_DOWNLOAD_DELAY)
-
-        if not downloaded:
-            logger.info(f"[아카라이브] 다운로드 성공한 이미지 없음: {title}")
-            return
-
-        # 배치 처리: MAX_EMBEDS_PER_MSG개씩 나눠서 전송
-        for batch_start in range(0, len(downloaded), MAX_EMBEDS_PER_MSG):
-            batch = downloaded[batch_start : batch_start + MAX_EMBEDS_PER_MSG]
-            await self._send_image_batch(batch, title, link, batch_start)
+        return downloaded
 
     def _download_single_image(self, img_url: str, referer: str) -> bytes | None:
         """단일 이미지 URL을 메모리로 다운로드.
 
         namu.la CDN은 Cloudflare 보호가 없으므로 일반 requests 사용.
         """
-        import requests as req
-
         headers = {"Referer": referer}
         try:
-            resp = req.get(img_url, headers=headers, timeout=15)
+            resp = requests.get(img_url, headers=headers, timeout=15)
             resp.raise_for_status()
             return resp.content
-        except Exception as e:
+        except requests.RequestException as e:
             logger.warning(f"이미지 다운로드 실패 ({img_url}): {e}")
             return None
 
@@ -190,21 +195,14 @@ class ArcaBot(discord.Client):
                 discord_file = discord.File(buffer, filename=filename)
                 files.append(discord_file)
 
-                # Embed 생성
-                # 첫 번째 이미지에만 title+link, 나머지는 제목 없음
+                # 첫 번째 이미지에만 title+link+footer, 나머지는 제목 없음
                 if global_idx == 0:
-                    embed = discord.Embed(
-                        title=title,
-                        url=link,
-                        color=0x00A3FF,  # 아카라이브 블루 계열
-                    )
-                    embed.set_footer(
-                        text=f"아카라이브 · {len(batch)}개 이미지"
+                    embed = make_image_embed(
+                        filename, title=title, url=link, color=ARCA_EMBED_COLOR,
+                        footer=f"아카라이브 · {len(batch)}개 이미지",
                     )
                 else:
-                    embed = discord.Embed(color=0x00A3FF)
-
-                embed.set_image(url=f"attachment://{filename}")
+                    embed = make_image_embed(filename, color=ARCA_EMBED_COLOR)
                 embeds.append(embed)
 
             try:
@@ -262,12 +260,9 @@ class ArcaBot(discord.Client):
             try:
                 embed_title = title if global_idx == 0 else None
                 embed_link = link if global_idx == 0 else None
-                embed = discord.Embed(
-                    title=embed_title,
-                    url=embed_link,
-                    color=0x00A3FF,
+                embed = make_image_embed(
+                    filename, title=embed_title, url=embed_link, color=ARCA_EMBED_COLOR,
                 )
-                embed.set_image(url=f"attachment://{filename}")
 
                 # 전송 전에 스냅샷 확보 (send가 버퍼 위치를 소비함)
                 data = buffer.getvalue()
@@ -285,8 +280,7 @@ class ArcaBot(discord.Client):
                         channel, buffer, filename,
                     )
                     if recompressed:
-                        embed = discord.Embed(color=0x00A3FF)
-                        embed.set_image(url=f"attachment://{filename}")
+                        embed = make_image_embed(filename, color=ARCA_EMBED_COLOR)
                         data = recompressed.getvalue()
                         await channel.send(
                             file=discord.File(recompressed, filename=filename),

@@ -1,45 +1,29 @@
 import logging
-from collections import OrderedDict
 
 import requests
 from bs4 import BeautifulSoup, SoupStrainer
 
 from Module.config import BS_PARSER, HEADERS, REQUEST_TIMEOUT
 
+# BoundedSet 은 공통 LRUCache 로 통합됨 — 기존 import(arca_crawler/테스트) 호환 위해 재노출
+from Module.lru_cache import BoundedSet, LRUCache  # noqa: F401
+
 logger = logging.getLogger(__name__)
 
 MAX_CACHE_SIZE = 500
+
+# 목록 상단의 공지/이벤트/완장성 글을 건너뛰고 일반 게시글부터 본다
+POST_SKIP_COUNT = 20
 
 # tr 요소만 파싱하여 파싱 비용 절감
 # (SoupStrainer의 class_ 매칭은 다중 클래스 속성에서 동작하지 않으므로 태그로만 거름)
 _POST_ROW_STRAINER = SoupStrainer("tr")
 
 
-class BoundedSet:
-    """크기가 제한된 set (FIFO 방식으로 오래된 항목 제거)"""
-    def __init__(self, maxsize=MAX_CACHE_SIZE):
-        self._data = OrderedDict()
-        self._maxsize = maxsize
-
-    def __contains__(self, item):
-        return item in self._data
-
-    def add(self, item):
-        if item in self._data:
-            self._data.move_to_end(item)
-            return
-        if len(self._data) >= self._maxsize:
-            self._data.popitem(last=False)
-        self._data[item] = None
-
-    def clear(self):
-        self._data.clear()
-
-
 class DCInsideCrawler:
     def __init__(self, base_url):
         self.base_url = base_url
-        self.sent_titles = BoundedSet()
+        self.sent_titles = LRUCache(MAX_CACHE_SIZE)
         self.session = requests.Session()
         self.session.headers.update(HEADERS)
 
@@ -58,7 +42,7 @@ class DCInsideCrawler:
             if not posts:
                 return None
 
-            for post in posts[20:]:
+            for post in posts[POST_SKIP_COUNT:]:
                 try:
                     title_element = post.select_one("td.gall_tit > a:first-child")
                     if not title_element:
