@@ -113,7 +113,6 @@ class MessageSender:
                     embed=embed
                 )
 
-            image_buffer.seek(0)
             logger.info(f"Discord 전송 성공: {filename}")
             return True
 
@@ -123,6 +122,13 @@ class MessageSender:
         except Exception as e:
             logger.error(f"Discord 전송 실패: {type(e).__name__}: {str(e)}")
             return False
+        finally:
+            # 호출부(dcbot)가 같은 버퍼로 여러 채널에 반복 전송하므로,
+            # 성공/실패와 무관하게 항상 읽기 위치를 리셋해 다음 전송에 대비한다.
+            try:
+                image_buffer.seek(0)
+            except (OSError, ValueError):
+                pass
 
     async def send_to_telegram(self, image_buffer, filename=None, is_gif=False, max_retries=3):
         """텔레그램으로 이미지 전송 (GIF는 animation으로, 재시도 포함)"""
