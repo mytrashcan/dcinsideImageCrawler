@@ -4,8 +4,9 @@ import json
 import os
 import sys
 
+# config는 arca_crawler보다 먼저 import해야 함 (arca_crawler._ARCA_SOCKS_PROXY가 모듈 로드 시점에 env를 읽음)
+from Module.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TOKEN, get_discord_intents, validate_required_env  # isort: skip
 from Module.arca_bot import ArcaBot
-from Module.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TOKEN, get_discord_intents, validate_required_env
 from Module.dcbot import DCBot
 
 
