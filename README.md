@@ -207,6 +207,8 @@ sudo systemctl restart dcselfie-launcher
 ```
 Verify the egress IP actually changed: `curl -x socks5h://localhost:1080 https://ifconfig.co` should print the home machine's IP, not the server's.
 
+On the **server**, set `ClientAliveInterval 30` / `ClientAliveCountMax 3` in `/etc/ssh/sshd_config` (then `sudo systemctl reload ssh`). Without this, if the home machine's IP changes (Wi-Fi switch, sleep/wake, ISP DHCP renewal) before it can cleanly close the old SSH session, the server can leave the dead session's reverse-forwarded port 1080 open indefinitely - blocking the new tunnel from rebinding it. With `ClientAliveInterval` set, the server detects and drops dead sessions within ~90s on its own, so a Wi-Fi change never requires manual cleanup.
+
 > ⚠️ **Don't combine `-D` with `-R` for this** (e.g. `-R 1080:localhost:1080` on top of `-D 1080`) - that routes the "reverse" connection back into the `-D` proxy on the *same* machine, which loops the traffic back out through the server instead of the home machine, silently defeating the whole point.
 >
 > ⚠️ **Never hardcode `ARCA_SOCKS_PROXY` (or any proxy credentials) directly in a git-tracked file** like a `.service` unit - this repo is public, and a proxy password committed to a tracked file stays in git history forever even after removal. Keep it in the server's `.env` only (gitignored); `launcher.py` already loads it via `python-dotenv`, no systemd `Environment=` line needed.
