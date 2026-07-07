@@ -17,8 +17,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# 1) 프로젝트 루트 .env 우선 로드 (DISCORD_TOKEN 등 주요 환경변수)
+load_dotenv()
+# 2) Module/.env 로드 (ARCA_SOCKS_PROXY 등 Module 전용 변수, 기존값 덮어쓰기 허용)
 env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "Module", ".env"))
-load_dotenv(env_path)
+load_dotenv(env_path, override=True)
 
 # galleries.json에서 갤러리 목록 로드 (arca 갤러리 포함)
 with open(os.path.join(os.path.dirname(__file__), "galleries.json"), encoding="utf-8") as f:

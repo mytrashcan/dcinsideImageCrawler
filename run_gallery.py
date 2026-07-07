@@ -4,8 +4,10 @@ import json
 import os
 import sys
 
-from Module.arca_bot import ArcaBot
+# ⚠️ config.py의 load_dotenv()가 arca_crawler보다 먼저 실행되어야 함
+# (arca_crawler._ARCA_SOCKS_PROXY가 os.getenv()로 모듈 로드 시점에 읽히므로)
 from Module.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TOKEN, get_discord_intents, validate_required_env
+from Module.arca_bot import ArcaBot
 from Module.dcbot import DCBot
 
 
