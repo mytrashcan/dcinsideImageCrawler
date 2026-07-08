@@ -11,6 +11,8 @@ __pycache__/
 *.so
 
 *.env
+# 맥 로컬 SSH 리버스 터널 Plist (OCI → arca.live 접속용)
+com.dcselfie.arca-tunnel.plist
 
 # Distribution / packaging
 .Python
