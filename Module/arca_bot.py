@@ -70,16 +70,30 @@ class ArcaBot(discord.Client):
             discord_embed_color=ARCA_EMBED_COLOR,
             telegram_enabled=False,
         )
+        self._crawler_task: asyncio.Task | None = None
 
     async def on_ready(self) -> object:
         logger.info(f"[아카라이브] Logged in as {self.user}")
+
+    async def setup_hook(self) -> None:
+        if self._crawler_task is None or self._crawler_task.done():
+            self._crawler_task = asyncio.create_task(self._run_crawler())
+
+    async def _run_crawler(self) -> None:
+        await self.wait_until_ready()
         await self.start_crawling()
+
+    async def close(self) -> None:
+        if self._crawler_task is not None:
+            self._crawler_task.cancel()
+            await asyncio.gather(self._crawler_task, return_exceptions=True)
+        await super().close()
 
     async def start_crawling(self) -> object:
         """주기적으로 새 게시글을 폴링한다."""
         while True:
             try:
-                posts = await self.crawler.get_latest_posts()
+                posts = await asyncio.to_thread(self.crawler.get_latest_posts)
                 for post in posts:
                     logger.info(f"[아카라이브] 새 게시글: {post['title']} ({post['link']})")
                     await self.process_post(post)
@@ -94,7 +108,7 @@ class ArcaBot(discord.Client):
 
     async def process_post(self, post: object) -> object:
         """게시글 내 모든 이미지를 추출하여 디스코드로 전송한다."""
-        images = await self.crawler.extract_all_images(post["link"])
+        images = await asyncio.to_thread(self.crawler.extract_all_images, post["link"])
         if not images:
             logger.info(f"[아카라이브] 이미지 없음: {post['title']}")
             return

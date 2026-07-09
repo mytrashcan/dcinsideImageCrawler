@@ -32,15 +32,29 @@ class DCBot(discord.Client):
             self.channel_ids,
             image_handler=self.image_handler,
         )
+        self._crawler_task: asyncio.Task | None = None
 
     async def on_ready(self) -> object:
         logger.info(f"Logged in as {self.user}")
+
+    async def setup_hook(self) -> None:
+        if self._crawler_task is None or self._crawler_task.done():
+            self._crawler_task = asyncio.create_task(self._run_crawler())
+
+    async def _run_crawler(self) -> None:
+        await self.wait_until_ready()
         await self.start_crawling()
+
+    async def close(self) -> None:
+        if self._crawler_task is not None:
+            self._crawler_task.cancel()
+            await asyncio.gather(self._crawler_task, return_exceptions=True)
+        await super().close()
 
     async def start_crawling(self) -> object:
         while True:
             try:
-                post = await self.crawler.get_latest_post()
+                post = await asyncio.to_thread(self.crawler.get_latest_post)
                 if post and post['has_image']:
                     await self.process_post(post)
             except discord.ConnectionClosed:
