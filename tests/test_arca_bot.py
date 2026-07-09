@@ -138,7 +138,6 @@ async def test_start_crawling_processes_posts(mock_dependencies, bot):
 @pytest.mark.asyncio
 async def test_download_single_image_success(mock_dependencies, bot):
     """_download_single_image downloads bytes via requests and returns them."""
-    import requests
 
     resp = MagicMock()
     resp.content = b"fake-image-bytes"
