@@ -1,60 +1,25 @@
-"""Ephemeral 웹 갤러리.
-
-여러 크롤러 프로세스(launcher가 띄우는 run_gallery.py들)가 동시에 이미지를
-보내고, 독립 웹 서버 프로세스 1개가 그것을 보여주는 구조를 지원하기 위해
-피드를 **파일시스템**에 둔다. (프로세스 간 메모리 공유가 불가능하므로)
-
-- 크롤러: save_bytes_to_gallery() 로 공유 디렉터리에 이미지 + 사이드카(.json) 기록
-- 웹 서버: snapshot() 으로 디렉터리를 mtime/created_at 기준 최신순 나열,
-  TTL 경과분과 max_items 초과분을 디스크에서 삭제 (ephemeral)
-
-저장소가 없어 어느 프로세스에서든 동작하며, TTL이 지나면 파일이 실제로 사라진다.
-"""
+"""Ephemeral web gallery backed only by bounded process memory."""
 from __future__ import annotations
 
 import asyncio
 import hashlib
 import hmac
 import json
-import os
-import re
-import threading
 import time
 import urllib.parse
 import urllib.request
-import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
-from fastapi.staticfiles import StaticFiles
 
 from Module.config import app_config
 from Module.lru_cache import LRUCache
-
-ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+from Module.memory_gallery import ImageTooLarge, InvalidImage, MemoryGalleryStore
 
 
 def _static_dir() -> Path:
     return Path(app_config.web_static_dir)
-
-
-def _upload_dir() -> Path:
-    d = _static_dir() / "images"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
-def _thumb_dir() -> Path:
-    # snapshot()의 iterdir()는 파일만 보므로 하위 디렉터리의 썸네일은 피드에 중복 등재되지 않는다.
-    d = _upload_dir() / "thumbs"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
-def _thumb_width() -> int:
-    """카드용 썸네일 최대 폭(px). 0이면 썸네일 생성 비활성화."""
-    return app_config.web_thumb_width
 
 
 def _ttl() -> int:
@@ -65,156 +30,31 @@ def _max_items() -> int:
     return app_config.web_feed_max_items
 
 
-def _ext_for(filename: str) -> str:
-    ext = os.path.splitext(filename or "")[1].lower()
-    return ext if ext in ALLOWED_EXT else ".jpg"
+def _build_store() -> MemoryGalleryStore:
+    mib = 1024 * 1024
+    return MemoryGalleryStore(
+        max_items=_max_items(),
+        max_bytes=app_config.web_memory_max_mb * mib,
+        max_image_bytes=app_config.web_image_max_mb * mib,
+        ttl_seconds=_ttl(),
+        thumbnail_width=app_config.web_thumb_width,
+    )
 
 
-def _remove(paths: object) -> object:
-    for p in paths:
+def _purge_legacy_disk_cache() -> None:
+    """Delete files created by the retired filesystem-backed gallery."""
+    legacy = _static_dir() / "images"
+    if not legacy.exists():
+        return
+    for path in sorted(legacy.rglob("*"), reverse=True):
         try:
-            p.unlink(missing_ok=True)
-        except OSError:
-            pass
-
-
-# 같은 이미지가 디스코드(채널 수만큼)+텔레그램으로 한 프로세스 안에서 여러 번 들어오므로,
-# 최근 저장한 원본 filename을 잠깐 기억해 프로세스 내 중복 기록을 막는다.
-_recent_lock = threading.Lock()
-_recent: dict[str, float] = {}
-_DEDUP_WINDOW = 300.0
-
-
-def _is_duplicate(filename: str) -> bool:
-    if not filename:
-        return False
-    now = time.monotonic()
-    with _recent_lock:
-        stale = [k for k, v in _recent.items() if now - v > _DEDUP_WINDOW]
-        for k in stale:
-            _recent.pop(k, None)
-        if filename in _recent:
-            return True
-        _recent[filename] = now
-    return False
-
-
-def _image_size(data: bytes) -> tuple[int, int]:
-    """이미지의 (width, height). 프론트가 로드 전에 카드 높이를 예약해
-    masonry 컬럼이 이미지 로딩 중에 뒤틀리지 않게 한다. 실패 시 (0, 0)."""
+            path.unlink() if path.is_file() else path.rmdir()
+        except OSError as exc:
+            raise RuntimeError(f"기존 디스크 이미지 캐시 삭제 실패: {path}") from exc
     try:
-        import io
-
-        from PIL import Image
-
-        with Image.open(io.BytesIO(data)) as img:
-            return img.width, img.height
-    except Exception:
-        return 0, 0
-
-
-def _make_thumbnail(data: bytes, name: str) -> bool:
-    """카드용 축소 이미지를 thumbs/<name>으로 생성한다 (같은 확장자 유지 → content-type 일치).
-
-    전송량을 줄이는 최적화일 뿐이므로 어떤 실패도 피드 적재를 막지 않는다(best-effort).
-    GIF/애니메이션은 움직임이 사라지므로 건너뛰고, 원본이 이미 충분히 작아도 건너뛴다.
-    """
-    max_w = _thumb_width()
-    if max_w <= 0 or name.lower().endswith(".gif"):
-        return False
-    try:
-        import io
-
-        from PIL import Image
-
-        img = Image.open(io.BytesIO(data))
-        if getattr(img, "is_animated", False) or img.width <= max_w:
-            return False
-        img.load()
-        img.thumbnail((max_w, max_w * 4), Image.LANCZOS)
-        ext = os.path.splitext(name)[1].lower()
-        if ext in (".jpg", ".jpeg") and img.mode not in ("RGB", "L"):
-            img = img.convert("RGB")
-        dest = _thumb_dir() / name
-        tmp = dest.with_suffix(dest.suffix + ".part")
-        fmt = {"jpg": "JPEG", "jpeg": "JPEG", "png": "PNG", "webp": "WEBP"}[ext.lstrip(".")]
-        save_kwargs = {"quality": 80} if fmt in ("JPEG", "WEBP") else {"optimize": True}
-        img.save(tmp, format=fmt, **save_kwargs)  # .part 확장자에선 포맷 추론이 안 되므로 명시
-        tmp.rename(dest)  # 부분 기록 노출 방지
-        return True
-    except Exception:
-        return False
-
-
-def save_bytes_to_gallery(data: bytes, filename: str, title: str = "", link: str = "", gallery: str = "") -> dict:
-    """이미지 바이트를 공유 갤러리 디렉터리에 기록한다. (크롤러 프로세스에서 호출)
-
-    이미지는 <uuid>.<ext>, 메타데이터는 <uuid>.<ext>.json 사이드카로 저장한다.
-    부분 기록된 파일이 웹 서버에 노출되지 않도록 임시파일에 쓴 뒤 atomic rename 한다.
-    link이 있으면 피드에서 제목이 해당 게시글 하이퍼링크가 되고,
-    gallery(출처 갤러리명)는 피드의 갤러리별 필터에 쓰인다.
-    """
-    if _is_duplicate(filename):
-        return {}
-    up = _upload_dir()
-    name = f"{uuid.uuid4().hex}{_ext_for(filename)}"
-    final = up / name
-    tmp = up / f"{name}.part"
-    created = time.time()
-    w, h = _image_size(data)
-    meta = {"filename": filename or name, "title": title, "link": link or "",
-            "gallery": gallery or "", "created_at": created, "w": w, "h": h}
-    try:
-        tmp.write_bytes(data)
-        (up / f"{name}.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
-        tmp.rename(final)  # 같은 디렉터리 내 rename은 atomic
-    except OSError:
-        _remove([tmp, up / f"{name}.json"])
-        return {}
-    has_thumb = _make_thumbnail(data, name)
-    item = {"id": name, "url": f"/static/images/{name}", **meta}
-    item["thumb"] = f"/static/images/thumbs/{name}" if has_thumb else item["url"]
-    return item
-
-
-def _read_meta(up: Path, name: str, mtime: float) -> dict:
-    """사이드카 메타를 안전한 기본값과 함께 dict로 읽는다."""
-    out = {"created_at": mtime, "title": "", "link": "", "gallery": "", "likes": 0, "w": 0, "h": 0}
-    try:
-        meta = json.loads((up / f"{name}.json").read_text(encoding="utf-8"))
-        out["created_at"] = float(meta.get("created_at", mtime))
-        out["title"] = meta.get("title", "") or ""
-        out["link"] = meta.get("link", "") or ""
-        out["gallery"] = meta.get("gallery", "") or ""
-        out["likes"] = int(meta.get("likes", 0))
-        out["w"] = int(meta.get("w", 0))
-        out["h"] = int(meta.get("h", 0))
-    except (OSError, ValueError, TypeError):
-        pass
-    return out
-
-
-def _remaining_ttl(name: str) -> int:
-    """이미지의 남은 TTL(초)을 반환한다. 만료됐으면 파일·사이드카·썸네일을 삭제하고 -1."""
-    up = _upload_dir()
-    image = up / name
-    thumb = _thumb_dir() / name
-    try:
-        mtime = image.stat().st_mtime
-    except OSError:
-        _remove([thumb, up / f"{name}.json"])  # 원본이 사라진 고아 썸네일/사이드카 정리
-        return -1
-    created = _read_meta(up, name, mtime)["created_at"]
-    remaining = int(created + _ttl() - time.time())
-    if remaining > 0:
-        return remaining
-    _remove([image, up / f"{name}.json", thumb])
-    return -1
-
-
-# 이미지 id는 uuid4().hex(32 hex) + 허용 확장자. 경로 조작/임의 파일 접근 방지용 검증.
-_ID_RE = re.compile(r"^[0-9a-f]{32}\.(jpg|jpeg|png|gif|webp)$")
-_like_lock = threading.Lock()
+        legacy.rmdir()
+    except OSError as exc:
+        raise RuntimeError(f"기존 디스크 이미지 캐시 디렉터리 삭제 실패: {legacy}") from exc
 
 # 클라이언트 localStorage 기반 1회 제한은 우회 가능하므로(스크립트로 반복 호출),
 # 서버에서도 IP 기준 최소 방어선을 둔다: (IP, 이미지) 조합당 1회 + IP당 분당 호출 수 제한.
@@ -249,104 +89,6 @@ def _rate_limited(bucket: dict, ip: str, window: float, max_count: int) -> bool:
             if s < cutoff:
                 del bucket[k]
     return count > max_count
-
-
-def like_image(image_id: str) -> object:
-    """이미지에 좋아요 +1. 사이드카(.json)의 likes 필드를 증가시키고 새 값을 반환한다."""
-    if not _ID_RE.match(image_id or ""):
-        return None
-    up = _upload_dir()
-    if not (up / image_id).is_file():
-        return None
-    sidecar = up / f"{image_id}.json"
-    with _like_lock:
-        try:
-            meta = json.loads(sidecar.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            meta = {}
-        meta["likes"] = int(meta.get("likes", 0)) + 1
-        tmp = up / f"{image_id}.json.part"
-        try:
-            tmp.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
-            tmp.rename(sidecar)  # 부분 기록 노출 방지
-        except OSError:
-            return None
-        return meta["likes"]
-
-
-# snapshot은 웹 서버 프로세스 1개에서만 호출되므로 별도 프로세스 락은 불필요하다.
-def snapshot(limit: int = 120) -> list[dict[str, object]]:
-    up = _upload_dir()
-    thumbs = _thumb_dir()
-    cutoff = time.time() - _ttl()
-    maxn = _max_items()
-    items = []
-    remove = []
-    for p in up.iterdir():
-        if not p.is_file() or p.suffix.lower() not in ALLOWED_EXT:
-            continue
-        try:
-            mtime = p.stat().st_mtime
-        except OSError:
-            continue
-        meta = _read_meta(up, p.name, mtime)
-        if meta["created_at"] < cutoff:
-            remove += [p, up / f"{p.name}.json", thumbs / p.name]
-            continue
-        url = f"/static/images/{p.name}"
-        items.append({
-            "id": p.name,
-            "url": url,
-            # 카드용 축소 이미지(전송량↓). 썸네일이 없는 이미지(GIF/소형/생성실패)는 원본 폴백.
-            "thumb": f"/static/images/thumbs/{p.name}" if (thumbs / p.name).is_file() else url,
-            # title/link/gallery/likes + w/h(로드 전 카드 높이 예약, masonry 뒤틀림 방지)
-            **{k: meta[k] for k in ("title", "link", "gallery", "likes", "w", "h", "created_at")},
-        })
-    items.sort(key=lambda it: it["created_at"], reverse=True)
-    if len(items) > maxn:
-        for it in items[maxn:]:
-            remove += [up / it["id"], up / f"{it['id']}.json", thumbs / it["id"]]
-        items = items[:maxn]
-    _remove(remove)
-    return items[: min(limit, len(items))]
-
-
-def attach_web_gallery(message_sender: object, gallery: str = "") -> None:
-    """봇의 메시지 센더를 감싸, 디스코드/텔레그램으로 보낸 이미지를 웹 갤러리에도 적재한다.
-
-    dcbot 코드는 건드리지 않는다. 디스코드가 먼저 전송되므로 title이 보존되고,
-    프로세스 내 dedup으로 채널 수만큼/텔레그램 중복이 합쳐진다.
-    gallery는 이 크롤러가 담당하는 갤러리명(피드의 갤러리별 필터용).
-    """
-    original_discord = message_sender.send_to_discord
-    original_telegram = message_sender.send_to_telegram
-
-    async def discord_with_web(channel: object, title: object, image_buffer: object, filename: object, url: object=None) -> object:
-        try:
-            return await original_discord(channel, title, image_buffer, filename, url)
-        finally:
-            try:
-                image_buffer.seek(0)
-                data = image_buffer.read()
-                if data:
-                    save_bytes_to_gallery(data, filename or "", title or "", url or "", gallery)
-            except (OSError, ValueError):
-                pass
-
-    async def telegram_with_web(image_buffer: object, filename: object=None, is_gif: object=False, max_retries: object=3) -> object:
-        data = None
-        try:
-            data = image_buffer.getvalue()
-        except (OSError, ValueError, AttributeError):
-            data = None
-        try:
-            return await original_telegram(image_buffer, filename, is_gif, max_retries)
-        finally:
-            if data:
-                save_bytes_to_gallery(data, filename or "", "", "", gallery)
-
-    message_sender.send_to_discord = discord_with_web
-    message_sender.send_to_telegram = telegram_with_web
 
 
 # ── Cloudflare Turnstile (봇 차단) ──
@@ -417,14 +159,15 @@ def _maintenance_on() -> bool:
     return app_config.web_maintenance or _maintenance_file().exists()
 
 
-def create_app() -> FastAPI:
+def create_app(store: MemoryGalleryStore | None = None) -> FastAPI:
     static_dir = _static_dir()
-    _upload_dir()  # 정적 마운트 전에 디렉터리 보장
     static_dir.mkdir(parents=True, exist_ok=True)
+    _purge_legacy_disk_cache()
+    gallery_store = store or _build_store()
+    ingest_slots = asyncio.Semaphore(2)
     # 공개용 이미지 피드일 뿐 소비 대상 API가 아니므로 대화형 문서/스키마는 끈다
     # (불필요한 내부 라우트 노출 방지).
     app = FastAPI(title="dcinsideImageCrawler Gallery", docs_url=None, redoc_url=None, openapi_url=None)
-    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
     def _page(name: str) -> HTMLResponse:
         f = static_dir / name
@@ -435,22 +178,8 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def cache_control(request: object, call_next: object) -> object:
         path = request.url.path
-        remaining = 0
-        if path.startswith("/static/images/"):
-            # 원본(/static/images/<id>)과 썸네일(/static/images/thumbs/<id>) 모두
-            # 마지막 세그먼트가 원본 id이므로, 썸네일은 원본의 남은 TTL을 그대로 상속한다.
-            image_id = path.rsplit("/", 1)[-1]
-            remaining = _remaining_ttl(image_id) if _ID_RE.match(image_id or "") else -1
-            if remaining <= 0:
-                # 만료(또는 잘못된 id): 404. no-store로 만료 응답 자체가 캐시되는 것도 방지.
-                return Response(status_code=404, headers={"Cache-Control": "no-store"})
         resp = await call_next(request)
-        if path.startswith("/static/images/"):
-            # 캐시 수명 = 남은 TTL. CDN/브라우저가 정확히 만료 시점에 캐시를 버리므로
-            # TTL 지난 이미지가 캐시로 살아남지 않으면서도 엣지 캐싱(오리진 부하↓)은 유지된다.
-            resp.headers["Cache-Control"] = f"public, max-age={remaining}, immutable"
-        elif path == "/feed" or path == "/":
-            # 실시간 피드/페이지는 절대 캐시 금지 (캐시되면 새 자짤이 안 뜸)
+        if path.startswith("/images/") or path in ("/feed", "/"):
             resp.headers["Cache-Control"] = "no-store"
         return resp
 
@@ -544,6 +273,50 @@ def create_app() -> FastAPI:
         return PlainTextResponse(f.read_text(encoding="utf-8"),
                                  headers={"Cache-Control": "public, max-age=86400"})
 
+    @app.post("/internal/images")
+    async def ingest_image(
+        request: Request,
+        filename: str = Query("", max_length=255),
+        title: str = Query("", max_length=500),
+        link: str = Query("", max_length=2048),
+        gallery: str = Query("", max_length=100),
+    ) -> object:
+        expected = app_config.web_ingest_token
+        supplied = request.headers.get("x-ingest-token", "")
+        if not expected or not hmac.compare_digest(expected, supplied):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        max_bytes = app_config.web_ingest_max_mb * 1024 * 1024
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                if int(content_length) > max_bytes:
+                    return JSONResponse({"error": "payload too large"}, status_code=413)
+            except ValueError:
+                return JSONResponse({"error": "invalid content length"}, status_code=400)
+        data = bytearray()
+        async for chunk in request.stream():
+            data.extend(chunk)
+            if len(data) > max_bytes:
+                return JSONResponse({"error": "payload too large"}, status_code=413)
+        try:
+            async with ingest_slots:
+                item = await asyncio.to_thread(
+                    gallery_store.put, bytes(data), filename, title, link, gallery
+                )
+        except InvalidImage:
+            return JSONResponse({"error": "invalid image"}, status_code=415)
+        except ImageTooLarge:
+            return JSONResponse({"error": "image too large"}, status_code=413)
+        return JSONResponse(item)
+
+    @app.get("/images/{image_id}")
+    async def image(image_id: str, thumbnail: bool = False) -> object:
+        found = gallery_store.get(image_id, thumbnail=thumbnail)
+        if found is None:
+            return Response(status_code=404, headers={"Cache-Control": "no-store"})
+        data, media_type = found
+        return Response(data, media_type=media_type, headers={"Cache-Control": "no-store"})
+
     @app.get("/feed")
     async def feed(request: Request, limit: int = Query(60, ge=1, le=200)) -> object:
         if _rate_limited(_feed_ip_rate, _client_ip(request), _FEED_RATE_WINDOW, _FEED_RATE_MAX):
@@ -555,7 +328,7 @@ def create_app() -> FastAPI:
         if _ts_enabled() and request.headers.get("cf-connecting-ip"):
             if not _ts_cookie_valid(request.cookies.get(_TS_COOKIE, "")):
                 return JSONResponse({"error": "verification required"}, status_code=403)
-        return JSONResponse(snapshot(limit))
+        return JSONResponse(gallery_store.snapshot(limit))
 
     @app.post("/verify")
     async def verify(request: Request) -> object:
@@ -581,27 +354,26 @@ def create_app() -> FastAPI:
         if _rate_limited(_like_ip_rate, ip, _LIKE_RATE_WINDOW, _LIKE_RATE_MAX):
             return JSONResponse({"error": "too many requests"}, status_code=429)
         if _like_ip_seen.add_if_absent((ip, image_id)):
-            # 같은 IP가 이 이미지에 이미 좋아요를 누른 적 있음 — 증가 없이 현재 값만 반환
-            if not _ID_RE.match(image_id or ""):
+            n = gallery_store.likes(image_id)
+            if n is None:
                 return JSONResponse({"error": "not found"}, status_code=404)
-            up = _upload_dir()
-            image = up / image_id
-            if not image.is_file():
-                return JSONResponse({"error": "not found"}, status_code=404)
-            n = _read_meta(up, image_id, image.stat().st_mtime)["likes"]
             return JSONResponse({"id": image_id, "likes": n})
-        n = like_image(image_id)
+        n = gallery_store.increment_likes(image_id)
         if n is None:
             return JSONResponse({"error": "not found"}, status_code=404)
         return JSONResponse({"id": image_id, "likes": n})
 
     @app.get("/healthz")
     async def healthz() -> object:
-        items = snapshot(_max_items())
+        stats = gallery_store.stats()
+        latest_age = stats["latest_age_seconds"]
+        fresh = latest_age is None or latest_age <= app_config.web_freshness_seconds
         return JSONResponse({
             "ok": True,
-            "items": len(items),
+            **stats,
+            "fresh": fresh,
             "ttl": _ttl(),
+            "ingest_configured": bool(app_config.web_ingest_token),
             "maintenance": _maintenance_on(),
         })
 

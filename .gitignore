@@ -179,7 +179,7 @@ poetry.toml
 pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python
-# 웹 갤러리 임시 이미지 (ephemeral, 커밋 금지)
+# 이전 버전의 웹 갤러리 디스크 캐시 (시작 시 삭제, 커밋 금지)
 web_static/images/
 serve_demo.py
 

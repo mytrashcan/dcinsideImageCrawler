@@ -122,13 +122,13 @@ No code changes required - just restart the launcher.
 
 You can serve the collected images as a live, **ephemeral** web feed - a Pinterest-style masonry grid at `http://<host>:8000/` that updates roughly in real time (the page polls every 5 seconds and only adds new cards). Post titles link back to the original DCInside post.
 
-**Nothing is stored permanently.** There is no database. Images are written to `web_static/images/` only as a temporary cache so the browser can load them, and each file is **deleted from disk** the moment it falls out of the feed - once it is older than the TTL (default 3 h) or pushed past the item cap. Direct image URLs also enforce that TTL, so an expired `/static/images/<id>` link returns 404 even if nobody has opened `/feed` recently. At most `WEB_FEED_MAX_ITEMS` images (default **120**) are kept; the 121st arrival deletes the oldest. Nothing accumulates.
+**Images are never written to disk.** The web process owns a bounded in-memory store. Images disappear when they exceed the TTL, item limit, or byte limit, and every image disappears immediately when the web process restarts.
 
-> The bot's own Discord/Telegram delivery is fully in-memory (image bytes are sent and garbage-collected, never touching disk). The temporary files exist *only* to display the web gallery. A disk-backed cache is required because the launcher runs each gallery as a separate process, and the filesystem is the only shared store between them.
+Crawler processes publish bytes to the web process through an authenticated localhost endpoint. `WEB_INGEST_TOKEN` must be shared through `.env`; `deploy_oci.sh` creates it automatically. The web process enforces `WEB_FEED_MAX_ITEMS`, `WEB_MEMORY_MAX_MB`, and `WEB_IMAGE_MAX_MB` before accepting data.
 
-The feed is backed by the **filesystem**, so those multiple crawler processes can share one web page. Each crawler writes images (plus a small `.json` sidecar for title / post link / timestamp) into the shared `web_static/images/` directory, and a single web-server process lists that directory newest-first.
+Thumbnails are generated into `BytesIO` and count toward the same memory budget. Image responses use `Cache-Control: no-store` so browsers and CDNs are instructed not to retain them.
 
-To cut transfer size, each crawler also generates a **card thumbnail** (max width `WEB_THUMB_WIDTH`, default 480 px) into `web_static/images/thumbs/`, and the feed serves that instead of the original. GIFs, animations, and images already smaller than the limit skip thumbnailing and fall back to the original. Thumbnails inherit the original's remaining-TTL cache policy and are deleted together with it.
+The production systemd unit disables core dumps and swap for the web process. Copies sent to Discord, Telegram, browsers, or other external systems remain outside this server's control.
 
 ### All galleries on one page (with the launcher)
 
@@ -158,9 +158,10 @@ python run_web_gallery.py <gallery_name>
 |------|-------------|
 | `/` | Masonry gallery page |
 | `/feed?limit=N` | JSON feed of recent items (`limit` 1-200, default 60) |
-| `/healthz` | Health check (`{ok, items, ttl}`) |
+| `/images/{id}` | In-memory image response (`Cache-Control: no-store`) |
+| `/healthz` | Memory usage, freshness, item count, and ingest readiness |
 
-> The server binds to `127.0.0.1:8000` by default (local only) - put a reverse proxy (Caddy, `cloudflared`, etc.) in front for public access, or set `WEB_HOST=0.0.0.0` explicitly if you really want it directly reachable. There is no authentication on `/feed`. Image responses are served with `Cache-Control: public, max-age=<remaining TTL>, immutable` - browsers/CDNs may cache each image, but only until its TTL expires, so expired gallery images never outlive the TTL in any cache while edge caching still offloads the origin.
+> The server binds to `127.0.0.1:8000` by default. `/internal/images` requires `WEB_INGEST_TOKEN`; never expose that token to browsers or commit it.
 
 ### Terminal monitor
 
@@ -234,6 +235,8 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now dcselfie-launcher dcselfie-web
 ```
 
+Subsequent OCI deployments should use `./deploy_oci.sh`; it pulls main, creates the ingest secret when missing, refreshes dependencies, restarts web before crawlers, and verifies health.
+
 Secrets (`DISCORD_TOKEN`, `ARCA_SOCKS_PROXY`, etc.) go in the project's `.env`, never in the unit files - see the warning in "Arcalive: Cloudflare bypass" above.
 
 Notes for small instances (1 GB RAM free tier):
@@ -286,10 +289,16 @@ dcinsideImageCrawler/
 | `WEB_GALLERY` | env | unset | Set to `1` so `launcher.py`/`run_gallery.py` crawlers also feed the web gallery |
 | `WEB_HOST` | env | `127.0.0.1` | Web gallery bind address (set `0.0.0.0` to expose directly, without a reverse proxy) |
 | `WEB_PORT` | env | 8000 | Web gallery port |
-| `WEB_IMAGE_TTL_SECONDS` | env | 10800 (3h) | How long an image stays in the feed before it expires and is deleted |
-| `WEB_FEED_MAX_ITEMS` | env | 120 | Max images kept in the feed; older ones are pruned and deleted |
-| `WEB_STATIC_DIR` | env | `web_static` | Directory for the gallery page and temporary images |
-| `WEB_THUMB_WIDTH` | env | 480 | Max card-thumbnail width in px (`0` disables thumbnailing) |
+| `WEB_IMAGE_TTL_SECONDS` | env | 10800 (3h) | How long an image stays in memory |
+| `WEB_FEED_MAX_ITEMS` | env | 120 | Maximum in-memory feed items |
+| `WEB_MEMORY_MAX_MB` | env | 256 | Hard cap for original and thumbnail bytes |
+| `WEB_IMAGE_MAX_MB` | env | 4 | Per-image cap after web compression |
+| `WEB_INGEST_MAX_MB` | env | 12 | Maximum localhost upload body |
+| `WEB_FRESHNESS_SECONDS` | env | 900 | Age threshold reported by `/healthz` |
+| `WEB_INGEST_TOKEN` | `.env` | required | Shared secret for crawler-to-web ingestion |
+| `WEB_GALLERY_URL` | env | `http://127.0.0.1:8000` | Internal web-gallery origin |
+| `WEB_STATIC_DIR` | env | `web_static` | Directory for HTML/CSS/static assets only |
+| `WEB_THUMB_WIDTH` | env | 480 | In-memory card-thumbnail width (`0` disables) |
 | `WEB_MAINTENANCE` | env | unset | Set to `1` to force the maintenance page (`503`). A `.maintenance` flag file next to the project (toggled by `./dcselfie.sh down` / `up`, no restart needed) has the same effect |
 | `ARCA_SOCKS_PROXY` | `.env` (never commit) | unset | `socks5://...` proxy the Arcalive crawler routes through - see "Arcalive Cloudflare bypass" below |
 | `TURNSTILE_SITEKEY` / `TURNSTILE_SECRET` | `.env` (never commit) | unset | Cloudflare Turnstile bot gate for the web gallery; unset disables it entirely |

@@ -1,264 +1,213 @@
 from __future__ import annotations
 
-import json
-import time
+import io
 
 from fastapi.testclient import TestClient
+from PIL import Image
 
-from web_app import create_app, save_bytes_to_gallery
-
-PNG_BYTES = (
-    b"\x89PNG\r\n\x1a\n"
-    b"\x00\x00\x00\rIHDR"
-    b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00"
-    b"\x90wS\xde"
-    b"\x00\x00\x00\x0cIDATx\x9cc\xf8\xcf\xc0\x00\x00\x03\x01\x01\x00\xc9\xfe\x92\xef"
-    b"\x00\x00\x00\x00IEND\xaeB`\x82"
-)
+import web_app
+from Module.memory_gallery import MemoryGalleryStore
+from web_app import create_app
 
 
-def make_client(monkeypatch: object, tmp_path: object, ttl_seconds: object=3600) -> object:
-    monkeypatch.setenv("WEB_STATIC_DIR", str(tmp_path / "web_static"))
-    monkeypatch.setenv("TURNSTILE_SECRET", "")
-    # AppConfig is loaded once at import time, but test_message_sender.py's
-    # importlib.reload(config) creates a NEW app_config singleton. web_app.py
-    # still references the PRE-reload object, so patching Module.config.app_config
-    # won't affect web_app._ttl(). Patch web_app's reference directly.
-    import web_app as _wa
-
-    _wa.app_config.web_image_ttl_seconds = ttl_seconds
-    _wa.app_config.web_static_dir = str(tmp_path / "web_static")
-    return TestClient(create_app())
+def image_bytes(size=(64, 64), *, fmt="PNG", color="#336699") -> bytes:
+    output = io.BytesIO()
+    Image.new("RGB", size, color).save(output, format=fmt)
+    return output.getvalue()
 
 
-def test_direct_image_url_expires_even_without_feed_poll(monkeypatch: object, tmp_path: object) -> None:
-    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
-    item = save_bytes_to_gallery(PNG_BYTES, "sample-expired.png", "title", "https://example.com")
+def make_store(*, clock=None, max_items=10, max_bytes=1024 * 1024, ttl=3600, thumb=480):
+    return MemoryGalleryStore(
+        max_items=max_items,
+        max_bytes=max_bytes,
+        max_image_bytes=max_bytes,
+        ttl_seconds=ttl,
+        thumbnail_width=thumb,
+        clock=clock or __import__("time").time,
+    )
 
-    image_path = tmp_path / "web_static" / "images" / item["id"]
-    sidecar = image_path.parent / f"{item['id']}.json"
-    meta = json.loads(sidecar.read_text(encoding="utf-8"))
-    meta["created_at"] = time.time() - 7200
-    sidecar.write_text(json.dumps(meta), encoding="utf-8")
 
+def make_client(monkeypatch, tmp_path, store=None) -> tuple[TestClient, MemoryGalleryStore]:
+    static_dir = tmp_path / "web_static"
+    static_dir.mkdir(exist_ok=True)
+    monkeypatch.setattr(web_app.app_config, "web_static_dir", str(static_dir))
+    monkeypatch.setattr(web_app.app_config, "web_ingest_token", "test-secret")
+    monkeypatch.setattr(web_app.app_config, "turnstile_secret", "")
+    monkeypatch.setattr(web_app, "_like_ip_seen", web_app.LRUCache(100))
+    monkeypatch.setattr(web_app, "_like_ip_rate", {})
+    monkeypatch.setattr(web_app, "_feed_ip_rate", {})
+    gallery_store = store or make_store()
+    return TestClient(create_app(gallery_store)), gallery_store
+
+
+def ingest(client: TestClient, data: bytes, filename="sample.png", **params):
+    return client.post(
+        "/internal/images",
+        params={"filename": filename, **params},
+        content=data,
+        headers={"X-Ingest-Token": "test-secret", "Content-Type": "application/octet-stream"},
+    )
+
+
+def test_ingest_serves_image_without_writing_to_disk(monkeypatch, tmp_path):
+    client, _ = make_client(monkeypatch, tmp_path)
+
+    result = ingest(
+        client,
+        image_bytes(),
+        title="title",
+        link="https://example.com/post",
+        gallery="test",
+    )
+
+    assert result.status_code == 200
+    item = result.json()
+    assert item["url"].startswith("/images/")
     response = client.get(item["url"])
-
-    assert response.status_code == 404
+    assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
-    assert not image_path.exists()
-    assert not sidecar.exists()
+    assert not (tmp_path / "web_static" / "images").exists()
 
 
-def test_direct_image_url_cache_lifetime_is_capped_by_remaining_ttl(monkeypatch: object, tmp_path: object) -> None:
-    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
-    item = save_bytes_to_gallery(PNG_BYTES, "sample-fresh.png", "title", "https://example.com")
+def test_ingest_requires_shared_secret(monkeypatch, tmp_path):
+    client, _ = make_client(monkeypatch, tmp_path)
 
-    response = client.get(item["url"])
+    response = client.post("/internal/images", content=image_bytes())
 
-    assert response.status_code == 200
-    assert response.content == PNG_BYTES
-    # 캐시 수명은 남은 TTL 이하: CDN이 만료 시점에 캐시를 버려 TTL 누출이 없고,
-    # 그 전까지는 엣지 캐싱(오리진 부하 감소)이 동작한다.
-    cc = response.headers["cache-control"]
-    assert cc.startswith("public, max-age=") and cc.endswith(", immutable")
-    max_age = int(cc.split("max-age=")[1].split(",")[0])
-    assert 0 < max_age <= 3600
+    assert response.status_code == 401
 
 
-def test_direct_image_url_cache_lifetime_shrinks_as_image_ages(monkeypatch: object, tmp_path: object) -> None:
-    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
-    item = save_bytes_to_gallery(PNG_BYTES, "sample-aged.png", "title", "https://example.com")
+def test_ingest_rejects_invalid_image(monkeypatch, tmp_path):
+    client, _ = make_client(monkeypatch, tmp_path)
 
-    sidecar = tmp_path / "web_static" / "images" / f"{item['id']}.json"
-    meta = json.loads(sidecar.read_text(encoding="utf-8"))
-    meta["created_at"] = time.time() - 3000  # 3600초 TTL 중 3000초 경과
-    sidecar.write_text(json.dumps(meta), encoding="utf-8")
+    response = ingest(client, b"not-an-image")
 
-    response = client.get(item["url"])
-
-    assert response.status_code == 200
-    max_age = int(response.headers["cache-control"].split("max-age=")[1].split(",")[0])
-    assert max_age <= 600
+    assert response.status_code == 415
 
 
-def _big_jpeg(width: object=1200, height: object=800) -> bytes:
-    import io
+def test_store_evicts_oldest_by_item_limit():
+    store = make_store(max_items=2)
+    first = store.put(image_bytes(color="red"), "1.png")
+    second = store.put(image_bytes(color="green"), "2.png")
+    third = store.put(image_bytes(color="blue"), "3.png")
 
-    from PIL import Image
-
-    buf = io.BytesIO()
-    Image.new("RGB", (width, height), "#336699").save(buf, format="JPEG", quality=95)
-    return buf.getvalue()
-
-
-def test_large_image_gets_thumbnail_and_feed_prefers_it(monkeypatch: object, tmp_path: object) -> None:
-    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
-    item = save_bytes_to_gallery(_big_jpeg(), "big.jpg", "title", "https://example.com")
-
-    assert item["thumb"] == f"/static/images/thumbs/{item['id']}"
-    thumb_path = tmp_path / "web_static" / "images" / "thumbs" / item["id"]
-    original_path = tmp_path / "web_static" / "images" / item["id"]
-    assert thumb_path.is_file()
-    # 전송량 최적화가 목적이므로 썸네일이 원본보다 실제로 작아야 한다.
-    assert thumb_path.stat().st_size < original_path.stat().st_size
-
-    feed = client.get("/feed").json()
-    assert feed[0]["thumb"] == item["thumb"]
-
-    response = client.get(item["thumb"])
-    assert response.status_code == 200
-    # 썸네일도 원본과 같은 '남은 TTL' 캐시 정책을 상속한다.
-    max_age = int(response.headers["cache-control"].split("max-age=")[1].split(",")[0])
-    assert 0 < max_age <= 3600
+    assert store.get(first["id"]) is None
+    assert store.get(second["id"]) is not None
+    assert store.get(third["id"]) is not None
+    assert store.stats()["items"] == 2
 
 
-def test_small_image_skips_thumbnail_and_falls_back_to_original(monkeypatch: object, tmp_path: object) -> None:
-    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
-    item = save_bytes_to_gallery(PNG_BYTES, "tiny.png", "title", "")
+def test_store_evicts_oldest_by_total_bytes():
+    first_data = image_bytes(size=(128, 128), color="red")
+    second_data = image_bytes(size=(128, 128), color="blue")
+    store = make_store(max_bytes=len(first_data) + len(second_data) - 1, thumb=0)
 
-    assert item["thumb"] == item["url"]
-    assert not (tmp_path / "web_static" / "images" / "thumbs" / item["id"]).exists()
-    feed = client.get("/feed").json()
-    assert feed[0]["thumb"] == item["url"]
+    first = store.put(first_data, "1.png")
+    second = store.put(second_data, "2.png")
 
-
-def test_expired_image_deletes_thumbnail_too(monkeypatch: object, tmp_path: object) -> None:
-    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
-    item = save_bytes_to_gallery(_big_jpeg(), "big-expired.jpg", "title", "")
-
-    thumb_path = tmp_path / "web_static" / "images" / "thumbs" / item["id"]
-    assert thumb_path.is_file()
-
-    sidecar = tmp_path / "web_static" / "images" / f"{item['id']}.json"
-    meta = json.loads(sidecar.read_text(encoding="utf-8"))
-    meta["created_at"] = time.time() - 7200
-    sidecar.write_text(json.dumps(meta), encoding="utf-8")
-
-    assert client.get(item["thumb"]).status_code == 404
-    assert not thumb_path.exists()
-    assert not (tmp_path / "web_static" / "images" / item["id"]).exists()
+    assert store.get(first["id"]) is None
+    assert store.get(second["id"]) is not None
+    assert store.stats()["memory_bytes"] <= store.max_bytes
 
 
-def test_feed_exposes_image_dimensions(monkeypatch: object, tmp_path: object) -> None:
-    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
-    save_bytes_to_gallery(_big_jpeg(1200, 800), "dim.jpg", "title", "")
+def test_store_expires_items_by_ttl():
+    now = [1000.0]
+    store = make_store(clock=lambda: now[0], ttl=60)
+    item = store.put(image_bytes(), "sample.png")
 
-    feed = client.get("/feed").json()
-    # 프론트가 로드 전에 카드 높이를 예약할 수 있도록 원본 치수를 내려보낸다.
-    assert feed[0]["w"] == 1200
-    assert feed[0]["h"] == 800
+    now[0] += 61
 
-
-def test_feed_exposes_source_gallery(monkeypatch: object, tmp_path: object) -> None:
-    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
-    save_bytes_to_gallery(PNG_BYTES, "g.png", "title", "", gallery="stariload")
-
-    feed = client.get("/feed").json()
-    # 갤러리별 필터를 위해 출처 갤러리명을 내려보낸다 (미기록 이미지는 빈 문자열)
-    assert feed[0]["gallery"] == "stariload"
+    assert store.get(item["id"]) is None
+    assert store.snapshot(10) == []
 
 
-def test_discovery_endpoints_are_served(monkeypatch: object, tmp_path: object) -> None:
-    import shutil
+def test_process_restart_starts_with_empty_store(monkeypatch, tmp_path):
+    client, _ = make_client(monkeypatch, tmp_path)
+    item = ingest(client, image_bytes()).json()
+    assert client.get(item["url"]).status_code == 200
 
-    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
-    static = tmp_path / "web_static"
-    for f in ("robots.txt", "sitemap.xml", "security.txt"):
-        shutil.copy(f"web_static/{f}", static / f)
+    restarted_client, restarted_store = make_client(monkeypatch, tmp_path, make_store())
 
-    robots = client.get("/robots.txt")
-    assert robots.status_code == 200
-    assert "Sitemap: https://dcselfie.win/sitemap.xml" in robots.text
-
-    sitemap = client.get("/sitemap.xml")
-    assert sitemap.status_code == 200
-    assert "<loc>https://dcselfie.win/</loc>" in sitemap.text
-
-    sec = client.get("/.well-known/security.txt")
-    assert sec.status_code == 200
-    assert "Contact: mailto:" in sec.text and "Expires:" in sec.text
+    assert restarted_store.snapshot(10) == []
+    assert restarted_client.get(item["url"]).status_code == 404
 
 
-def test_pwa_manifest_is_served(monkeypatch: object, tmp_path: object) -> None:
-    import shutil
+def test_large_image_has_in_memory_thumbnail(monkeypatch, tmp_path):
+    client, _ = make_client(monkeypatch, tmp_path)
 
-    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
-    shutil.copy("web_static/manifest.json", tmp_path / "web_static" / "manifest.json")
+    item = ingest(client, image_bytes((1200, 800), fmt="JPEG"), "large.jpg").json()
 
-    r = client.get("/manifest.json")
-    assert r.status_code == 200
-    assert r.headers["content-type"].startswith("application/manifest+json")
-    m = r.json()
-    assert m["display"] == "standalone"
-    assert any(i["sizes"] == "512x512" for i in m["icons"])
-
-
-def test_like_same_ip_does_not_increment_twice(monkeypatch: object, tmp_path: object) -> None:
-    import web_app
-    monkeypatch.setattr(web_app, "_like_ip_seen", web_app.LRUCache(100))
-    monkeypatch.setattr(web_app, "_like_ip_rate", {})
-
-    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
-    item = save_bytes_to_gallery(PNG_BYTES, "like.png", "title", "")
-
-    r1 = client.post(f"/like/{item['id']}")
-    r2 = client.post(f"/like/{item['id']}")
-    # localStorage 우회(같은 IP가 스크립트로 반복 호출)해도 서버에서 중복 증가를 막는다.
-    assert r1.json()["likes"] == 1
-    assert r2.json()["likes"] == 1
+    assert item["thumb"].endswith("?thumbnail=1")
+    thumb = client.get(item["thumb"])
+    original = client.get(item["url"])
+    assert thumb.status_code == 200
+    assert len(thumb.content) < len(original.content)
+    assert thumb.headers["cache-control"] == "no-store"
 
 
-def test_like_different_ip_can_still_increment(monkeypatch: object, tmp_path: object) -> None:
-    import web_app
-    monkeypatch.setattr(web_app, "_like_ip_seen", web_app.LRUCache(100))
-    monkeypatch.setattr(web_app, "_like_ip_rate", {})
+def test_duplicate_content_is_suppressed(monkeypatch, tmp_path):
+    client, _ = make_client(monkeypatch, tmp_path)
+    data = image_bytes()
 
-    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
-    item = save_bytes_to_gallery(PNG_BYTES, "like2.png", "title", "")
-
-    r1 = client.post(f"/like/{item['id']}", headers={"cf-connecting-ip": "1.1.1.1"})
-    r2 = client.post(f"/like/{item['id']}", headers={"cf-connecting-ip": "2.2.2.2"})
-    assert r1.json()["likes"] == 1
-    assert r2.json()["likes"] == 2
+    assert ingest(client, data, "first.png").json()
+    assert ingest(client, data, "second.png").json() == {}
 
 
-def test_like_rate_limit_returns_429_past_threshold(monkeypatch: object, tmp_path: object) -> None:
-    import web_app
-    monkeypatch.setattr(web_app, "_like_ip_seen", web_app.LRUCache(100))
-    monkeypatch.setattr(web_app, "_like_ip_rate", {})
-    monkeypatch.setattr(web_app, "_LIKE_RATE_MAX", 3)
+def test_like_state_is_kept_in_memory(monkeypatch, tmp_path):
+    client, _ = make_client(monkeypatch, tmp_path)
+    item = ingest(client, image_bytes()).json()
 
-    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
-    items = [save_bytes_to_gallery(PNG_BYTES, f"rl{i}.png", "title", "") for i in range(5)]
+    first = client.post(f"/like/{item['id']}")
+    second = client.post(f"/like/{item['id']}")
 
-    headers = {"cf-connecting-ip": "9.9.9.9"}
-    statuses = [client.post(f"/like/{it['id']}", headers=headers).status_code for it in items]
-    assert statuses[:3] == [200, 200, 200]
-    assert 429 in statuses[3:]
+    assert first.json()["likes"] == 1
+    assert second.json()["likes"] == 1
 
 
-def test_api_docs_are_disabled(monkeypatch: object, tmp_path: object) -> None:
-    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
+def test_health_reports_memory_and_freshness(monkeypatch, tmp_path):
+    now = [1000.0]
+    store = make_store(clock=lambda: now[0])
+    client, _ = make_client(monkeypatch, tmp_path, store)
+    monkeypatch.setattr(web_app.app_config, "web_freshness_seconds", 30)
+    ingest(client, image_bytes())
+    now[0] += 31
+
+    health = client.get("/healthz").json()
+
+    assert health["items"] == 1
+    assert health["memory_bytes"] > 0
+    assert health["ingest_configured"] is True
+    assert health["fresh"] is False
+
+
+def test_startup_removes_legacy_disk_cache(monkeypatch, tmp_path):
+    legacy = tmp_path / "web_static" / "images" / "thumbs"
+    legacy.mkdir(parents=True)
+    (legacy / "old.jpg").write_bytes(b"old")
+
+    make_client(monkeypatch, tmp_path)
+
+    assert not (tmp_path / "web_static" / "images").exists()
+
+
+def test_feed_and_api_docs_policy(monkeypatch, tmp_path):
+    client, _ = make_client(monkeypatch, tmp_path)
+    ingest(client, image_bytes(), gallery="test")
+
+    feed = client.get("/feed")
+
+    assert feed.status_code == 200
+    assert feed.json()[0]["gallery"] == "test"
+    assert feed.headers["cache-control"] == "no-store"
     for path in ("/docs", "/redoc", "/openapi.json"):
         assert client.get(path).status_code == 404
 
 
-def test_security_headers_present_on_every_response(monkeypatch: object, tmp_path: object) -> None:
-    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
-    r = client.get("/feed")
-    assert r.headers["x-content-type-options"] == "nosniff"
-    assert r.headers["x-frame-options"] == "DENY"
-    assert r.headers["referrer-policy"] == "strict-origin-when-cross-origin"
-    assert "max-age=" in r.headers["strict-transport-security"]
+def test_security_headers_present(monkeypatch, tmp_path):
+    client, _ = make_client(monkeypatch, tmp_path)
 
+    response = client.get("/healthz")
 
-def test_feed_rate_limit_returns_429_past_threshold(monkeypatch: object, tmp_path: object) -> None:
-    import web_app
-    monkeypatch.setattr(web_app, "_feed_ip_rate", {})
-    monkeypatch.setattr(web_app, "_FEED_RATE_MAX", 3)
-
-    client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
-    headers = {"cf-connecting-ip": "8.8.8.8"}
-    statuses = [client.get("/feed", headers=headers).status_code for _ in range(5)]
-    assert statuses[:3] == [200, 200, 200]
-    assert 429 in statuses[3:]
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"

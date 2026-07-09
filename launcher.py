@@ -69,8 +69,6 @@ def run_script(gallery_name: object) -> object:
     python_executable = sys.executable
     process = subprocess.Popen(
         [python_executable, "run_gallery.py", gallery_name],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
     )
     logger.info(f"{gallery_name} 크롤러 실행됨 (PID: {process.pid})")
     return process
