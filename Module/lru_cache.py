@@ -5,6 +5,7 @@ ImageHandler의 이미지 해시 중복 방지가 모두 동일한
 "OrderedDict + FIFO 축출" 패턴이라 한 곳으로 모은다.
 """
 from __future__ import annotations
+
 from collections import OrderedDict
 
 DEFAULT_MAX_SIZE = 500

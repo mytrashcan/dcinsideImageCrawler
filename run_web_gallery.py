@@ -6,6 +6,7 @@
 를 따로 실행한다. (README의 "web gallery" 절 참고)
 """
 from __future__ import annotations
+
 import asyncio
 import json
 import os

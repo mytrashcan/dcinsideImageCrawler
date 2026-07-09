@@ -1,5 +1,6 @@
 """Single gallery runner — routes to DCInside (DCBot) or Arcalive (ArcaBot) based on galleries.json type."""
 from __future__ import annotations
+
 import asyncio
 import json
 import os

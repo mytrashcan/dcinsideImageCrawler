@@ -4,6 +4,7 @@
 아카라이브 HTML 구조가 바뀌면 CI에서 즉시 감지된다.
 """
 from __future__ import annotations
+
 from bs4 import BeautifulSoup
 
 from Module.arca_crawler import ArcaliveCrawler, _create_session, _mask_proxy

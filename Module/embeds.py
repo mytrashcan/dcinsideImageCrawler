@@ -4,6 +4,7 @@ dcbot / arca_bot / message_sender 가 모두 동일한
 `Embed(title, url, color) + set_image(attachment://...)` 패턴을 쓰므로 한 곳으로 모은다.
 """
 from __future__ import annotations
+
 import discord
 
 
