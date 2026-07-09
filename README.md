@@ -135,11 +135,11 @@ The production systemd unit disables core dumps and swap for the web process. Co
 Run the launcher with `WEB_GALLERY=1` so every crawler also writes to the shared gallery, and start one web server alongside it:
 
 ```bash
-# terminal 1 - crawlers (all galleries in galleries.json), each feeding the gallery
-WEB_GALLERY=1 python launcher.py
-
-# terminal 2 - the web server
+# terminal 1 - start the web server first
 python run_web_server.py
+
+# terminal 2 - crawlers (all galleries in galleries.json), each feeding the gallery
+WEB_GALLERY=1 python launcher.py
 ```
 
 Open `http://localhost:8000/` - images from every gallery appear in one feed. This works for both DCInside and Arcalive galleries - the gallery filter in the web UI shows `arca_*` gallery names for images coming from arcalive sources.
@@ -236,6 +236,8 @@ sudo systemctl enable --now dcselfie-launcher dcselfie-web
 ```
 
 Subsequent OCI deployments should use `./deploy_oci.sh`; it pulls main, creates the ingest secret when missing, refreshes dependencies, restarts web before crawlers, and verifies health.
+
+The launcher requires the web service and waits for its authenticated ingest endpoint before it starts crawlers. After changing the unit files, run `sudo systemctl daemon-reload`. For a manual restart, use `sudo systemctl restart dcselfie-web && sudo systemctl restart dcselfie-launcher`.
 
 Secrets (`DISCORD_TOKEN`, `ARCA_SOCKS_PROXY`, etc.) go in the project's `.env`, never in the unit files - see the warning in "Arcalive: Cloudflare bypass" above.
 

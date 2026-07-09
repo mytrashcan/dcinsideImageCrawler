@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 import requests
 
@@ -13,9 +14,18 @@ logger = logging.getLogger(__name__)
 
 
 class GalleryClient:
-    def __init__(self, base_url: str | None = None, token: str | None = None):
+    def __init__(
+        self,
+        base_url: str | None = None,
+        token: str | None = None,
+        *,
+        max_attempts: int = 3,
+        retry_delay_seconds: float = 1.0,
+    ):
         self.base_url = (base_url or app_config.web_gallery_url).rstrip("/")
         self.token = token if token is not None else app_config.web_ingest_token
+        self.max_attempts = max(1, max_attempts)
+        self.retry_delay_seconds = max(0.0, retry_delay_seconds)
 
     def publish(
         self,
@@ -30,27 +40,38 @@ class GalleryClient:
             if not self.token:
                 logger.error("WEB_INGEST_TOKEN이 없어 웹 갤러리 전송을 건너뜁니다.")
             return {}
-        try:
-            response = requests.post(
-                f"{self.base_url}/internal/images",
-                params={
-                    "filename": filename or "",
-                    "title": title or "",
-                    "link": link or "",
-                    "gallery": gallery or "",
-                },
-                data=data,
-                headers={
-                    "X-Ingest-Token": self.token,
-                    "Content-Type": "application/octet-stream",
-                },
-                timeout=10,
-            )
-            response.raise_for_status()
-            return response.json()
-        except (requests.RequestException, ValueError) as exc:
-            logger.warning("웹 갤러리 전송 실패 (%s): %s", filename, exc)
-            return {}
+        for attempt in range(1, self.max_attempts + 1):
+            try:
+                response = requests.post(
+                    f"{self.base_url}/internal/images",
+                    params={
+                        "filename": filename or "",
+                        "title": title or "",
+                        "link": link or "",
+                        "gallery": gallery or "",
+                    },
+                    data=data,
+                    headers={
+                        "X-Ingest-Token": self.token,
+                        "Content-Type": "application/octet-stream",
+                    },
+                    timeout=10,
+                )
+                response.raise_for_status()
+                return response.json()
+            except (requests.RequestException, ValueError) as exc:
+                if attempt == self.max_attempts:
+                    logger.warning("웹 갤러리 전송 실패 (%s): %s", filename, exc)
+                    return {}
+                logger.warning(
+                    "웹 갤러리 전송 재시도 %s/%s (%s): %s",
+                    attempt,
+                    self.max_attempts,
+                    filename,
+                    exc,
+                )
+                time.sleep(self.retry_delay_seconds * attempt)
+        return {}
 
     async def publish_async(self, *args, **kwargs) -> dict:
         return await asyncio.to_thread(self.publish, *args, **kwargs)
