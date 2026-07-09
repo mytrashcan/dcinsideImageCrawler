@@ -1,0 +1,173 @@
+"""Smoke tests for ArcaBot instantiation and basic process_post logic.
+
+ArcaBot inherits discord.Client, so we monkeypatch the crawler and image_handler
+to avoid real network/Discord dependencies.
+"""
+
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import discord
+import pytest
+
+from Module.arca_bot import ArcaBot
+
+
+@pytest.fixture
+def mock_dependencies():
+    """Return (mock_crawler, mock_image_handler, mock_message_sender) instances."""
+    crawler_mock = MagicMock()
+    image_handler_mock = MagicMock()
+    message_sender_mock = MagicMock()
+
+    with (
+        patch("Module.arca_bot.ArcaliveCrawler", return_value=crawler_mock),
+        patch("Module.arca_bot.ImageHandler", return_value=image_handler_mock),
+        patch("Module.arca_bot.MessageSender", return_value=message_sender_mock),
+    ):
+        yield crawler_mock, image_handler_mock, message_sender_mock
+
+
+@pytest.fixture
+def bot(mock_dependencies):
+    """Build an ArcaBot whose dependencies are all mocked.
+
+    We also patch get_channel so internal calls don't need a real Discord connection.
+    """
+    intents = discord.Intents.default()
+    b = ArcaBot(
+        token="fake-token",
+        base_url="https://arca.live/b/test",
+        channel_ids=["123456789"],
+        intents=intents,
+    )
+    # Replace get_channel so _send_image_batch doesn't need real channel
+    b.get_channel = MagicMock(return_value=MagicMock())
+    return b
+
+
+@pytest.mark.asyncio
+async def test_arca_bot_instantiation(bot):
+    """Verify the ArcaBot can be instantiated without errors."""
+    assert bot.token == "fake-token"
+    assert len(bot.channel_ids) == 1
+    assert bot.crawler is not None
+    assert bot.image_handler is not None
+    assert bot.message_sender is not None
+
+
+@pytest.mark.asyncio
+async def test_process_post_with_images(mock_dependencies, bot):
+    """process_post extracts images, downloads them, and sends embeds.
+
+    We mock extract_all_images and _download_and_process to verify the flow.
+    """
+    crawler_mock, _, _ = mock_dependencies
+    crawler_mock.extract_all_images.return_value = [
+        {"url": "https://img.example.com/1.jpg", "filename": "1.jpg"},
+        {"url": "https://img.example.com/2.jpg", "filename": "2.jpg"},
+    ]
+    # Mock _download_and_process to return processed items
+    bot._download_and_process = AsyncMock(
+        return_value=[
+            {"discord_buffer": MagicMock(), "telegram_buffer": MagicMock(),
+             "filename": "1.jpg", "is_gif": False},
+            {"discord_buffer": MagicMock(), "telegram_buffer": MagicMock(),
+             "filename": "2.jpg", "is_gif": False},
+        ]
+    )
+    bot._send_image_batch = AsyncMock()
+
+    post = {"title": "Arca Post", "link": "https://arca.live/b/test/1"}
+    await bot.process_post(post)
+
+    crawler_mock.extract_all_images.assert_called_once_with(post["link"])
+    bot._download_and_process.assert_called_once()
+    bot._send_image_batch.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_process_post_no_images(mock_dependencies, bot):
+    """process_post returns early when no images are extracted."""
+    crawler_mock, _, _ = mock_dependencies
+    crawler_mock.extract_all_images.return_value = []
+
+    post = {"title": "No Img", "link": "https://arca.live/b/test/2"}
+    await bot.process_post(post)
+
+    crawler_mock.extract_all_images.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_start_crawling_retries_on_error(mock_dependencies, bot):
+    """start_crawling does not crash when crawler.get_latest_posts raises.
+
+    Uses asyncio.wait_for with a timeout because the loop is infinite.
+    """
+    crawler_mock, _, _ = mock_dependencies
+    crawler_mock.get_latest_posts.side_effect = Exception("Transient error")
+
+    with patch("asyncio.sleep", AsyncMock()):
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(bot.start_crawling(), timeout=0.1)
+
+    assert crawler_mock.get_latest_posts.call_count >= 1
+
+
+@pytest.mark.asyncio
+async def test_start_crawling_processes_posts(mock_dependencies, bot):
+    """start_crawling calls process_post for each new post returned."""
+    crawler_mock, _, _ = mock_dependencies
+    posts = [
+        {"title": "Post 1", "link": "https://arca.live/b/test/10"},
+        {"title": "Post 2", "link": "https://arca.live/b/test/11"},
+    ]
+    crawler_mock.get_latest_posts.side_effect = [posts, posts, posts]
+
+    bot.process_post = AsyncMock()
+
+    with patch("asyncio.sleep", AsyncMock()):
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(bot.start_crawling(), timeout=0.1)
+
+    assert bot.process_post.call_count >= 2
+    bot.process_post.assert_any_call(posts[0])
+    bot.process_post.assert_any_call(posts[1])
+
+
+@pytest.mark.asyncio
+async def test_download_single_image_success(mock_dependencies, bot):
+    """_download_single_image downloads bytes via requests and returns them."""
+    import requests
+
+    resp = MagicMock()
+    resp.content = b"fake-image-bytes"
+    resp.raise_for_status.return_value = None
+
+    with patch("Module.arca_bot.requests.get", return_value=resp) as mock_get:
+        result = bot._download_single_image(
+            "https://img.example.com/1.jpg", "https://arca.live/b/test/1"
+        )
+
+    assert result == b"fake-image-bytes"
+    mock_get.assert_called_once_with(
+        "https://img.example.com/1.jpg",
+        headers={"Referer": "https://arca.live/b/test/1"},
+        timeout=15,
+    )
+
+
+@pytest.mark.asyncio
+async def test_download_single_image_failure(mock_dependencies, bot):
+    """_download_single_image returns None on request failure."""
+    import requests
+
+    with patch(
+        "Module.arca_bot.requests.get",
+        side_effect=requests.RequestException("timeout"),
+    ):
+        result = bot._download_single_image(
+            "https://img.example.com/fail.jpg", "https://arca.live/"
+        )
+
+    assert result is None
