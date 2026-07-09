@@ -17,8 +17,13 @@ PNG_BYTES = (
 
 def make_client(monkeypatch, tmp_path, ttl_seconds=3600):
     monkeypatch.setenv("WEB_STATIC_DIR", str(tmp_path / "web_static"))
-    monkeypatch.setenv("WEB_IMAGE_TTL_SECONDS", str(ttl_seconds))
     monkeypatch.setenv("TURNSTILE_SECRET", "")
+    # AppConfig is loaded once at import time, so env var monkeypatch won't retroactively
+    # change app_config.web_image_ttl_seconds. Patch the singleton directly instead.
+    from Module.config import app_config
+
+    app_config.web_image_ttl_seconds = ttl_seconds
+    app_config.web_static_dir = str(tmp_path / "web_static")
     return TestClient(create_app())
 
 
