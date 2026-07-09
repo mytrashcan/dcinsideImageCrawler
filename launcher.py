@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import logging
 import os
@@ -40,7 +42,7 @@ MAX_PROCESS_LIFETIME = 3600
 
 shutdown_requested = False
 
-def signal_handler(sig, frame):
+def signal_handler(sig: object, frame: object) -> object:
     global shutdown_requested
     logger.info("종료 신호 수신. 프로세스를 정리합니다...")
     shutdown_requested = True
@@ -48,7 +50,7 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
-def is_already_running(gallery_name):
+def is_already_running(gallery_name: object) -> object:
     """해당 갤러리가 이미 실행 중인지 확인"""
     for proc in psutil.process_iter(["pid", "cmdline"]):
         try:
@@ -62,7 +64,7 @@ def is_already_running(gallery_name):
             continue
     return False
 
-def run_script(gallery_name):
+def run_script(gallery_name: object) -> object:
     """run_gallery.py를 통해 갤러리 크롤러 실행 (DCInside/Arcalive 모두)"""
     python_executable = sys.executable
     process = subprocess.Popen(
@@ -73,7 +75,7 @@ def run_script(gallery_name):
     logger.info(f"{gallery_name} 크롤러 실행됨 (PID: {process.pid})")
     return process
 
-def stop_running_processes():
+def stop_running_processes() -> object:
     """현재 실행 중인 모든 프로세스를 종료"""
     for gallery_name, (process, _) in list(processes.items()):
         logger.info(f"{gallery_name} 크롤러 종료 중...")
@@ -85,7 +87,7 @@ def stop_running_processes():
             process.wait()
     processes.clear()
 
-def _pick_from_queue(queue, max_count, source_label):
+def _pick_from_queue(queue: object, max_count: object, source_label: object) -> object:
     """큐에서 최대 max_count개의 갤러리를 선택 (실행 중이면 건너뜀)"""
     started = 0
     skipped = 0
@@ -107,7 +109,7 @@ def _pick_from_queue(queue, max_count, source_label):
         logger.info(f"{source_label}: {started}개 시작됨" + (f", {skipped}개 이미 실행 중" if skipped else ""))
     return started
 
-def manage_crawlers():
+def manage_crawlers() -> object:
     """크롤링 프로세스를 관리 (DC 최대 {MAX_DC}개 + Arca 최대 {MAX_ARCA}개)"""
     while not shutdown_requested:
         logger.info(f"DC 갤러리: {len(dc_galleries)}개, Arca 갤러리: {len(arca_galleries)}개")
@@ -128,7 +130,7 @@ def manage_crawlers():
         if not shutdown_requested:
             logger.info("실행 시간 초과. 프로세스를 재시작합니다.")
 
-def main():
+def main() -> object:
     """메인 실행 함수"""
     logger.info("크롤러 관리 프로세스를 시작합니다.")
     try:

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 
 import requests
@@ -21,17 +23,17 @@ _POST_ROW_STRAINER = SoupStrainer("tr")
 
 
 class DCInsideCrawler:
-    def __init__(self, base_url):
+    def __init__(self, base_url: object) -> None:
         self.base_url = base_url
         self.sent_titles = LRUCache(MAX_CACHE_SIZE)
         self.session = requests.Session()
         self.session.headers.update(HEADERS)
 
-    def image_check(self, element):
+    def image_check(self, element: object) -> object:
         """이미지 포함 여부 체크"""
         return element.select_one(".icon_pic") is not None
 
-    def get_latest_post(self):
+    def get_latest_post(self) -> object:
         """최신 게시글 정보 가져오기 (동기)"""
         try:
             res = self.session.get(self.base_url, timeout=REQUEST_TIMEOUT)
