@@ -1,4 +1,4 @@
-"""단일 갤러리 크롤러 + 임시 웹 갤러리를 한 프로세스에서 실행한다 (DCInside/Arcalive 모두).
+"""단일 갤러리 크롤러 + 메모리 전용 웹 갤러리를 한 프로세스에서 실행한다.
 
 여러 갤러리를 한 웹 페이지에 모으려면 이 파일 대신:
   - launcher.py  (WEB_GALLERY=1 환경변수로 각 크롤러가 웹에 적재)
@@ -7,6 +7,7 @@
 """
 import asyncio
 import json
+import secrets
 import sys
 from threading import Thread
 
@@ -16,7 +17,8 @@ import uvicorn
 from Module.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TOKEN, app_config, get_discord_intents, validate_required_env  # isort: skip
 from Module.arca_bot import ArcaBot
 from Module.dcbot import DCBot
-from web_app import attach_web_gallery, create_app
+from Module.gallery_client import attach_web_gallery
+from web_app import create_app
 
 
 def load_gallery_config(gallery_name):
@@ -39,6 +41,8 @@ def start_web_gallery():
 async def main(gallery_name):
     config = load_gallery_config(gallery_name)
     intents = get_discord_intents()
+    if not app_config.web_ingest_token:
+        app_config.web_ingest_token = secrets.token_urlsafe(32)
 
     web_thread = Thread(target=start_web_gallery, daemon=True)
     web_thread.start()

@@ -708,7 +708,7 @@
     let openTimer = null; // 더블클릭(좋아요) 판정을 기다렸다가 여는 지연 타이머
 
     function openLightbox(id) {
-      lightboxImg.src = '/static/images/' + encodeURIComponent(id); // 썸네일이 아닌 원본
+      lightboxImg.src = '/images/' + encodeURIComponent(id); // 썸네일이 아닌 원본
       lightbox.hidden = false;
       document.body.style.overflow = 'hidden';
     }

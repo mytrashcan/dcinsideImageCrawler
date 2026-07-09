@@ -1,10 +1,7 @@
-"""임시 웹 갤러리 서버 (단독 실행).
+"""메모리 전용 임시 웹 갤러리 서버.
 
-launcher.py가 여러 갤러리 크롤러를 띄우고(WEB_GALLERY=1), 그 크롤러들이 공유
-디렉터리(web_static/images)에 이미지를 쌓으면, 이 서버 1개가 모아서 보여준다.
-
-  WEB_GALLERY=1 python launcher.py     # 크롤러들 (각자 웹에 적재)
-  python run_web_server.py             # 웹 서버 (http://localhost:8000)
+launcher의 크롤러 프로세스는 localhost 내부 API로 이미지를 보내고, 이 프로세스가
+bounded memory store를 단독 소유한다. 프로세스 종료 시 이미지도 모두 사라진다.
 """
 import uvicorn
 from dotenv import load_dotenv

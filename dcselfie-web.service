@@ -11,6 +11,10 @@ Environment=WEB_PORT=8000
 ExecStart=/home/ubuntu/dcinsideImageCrawler/venv/bin/python run_web_server.py
 Restart=on-failure
 RestartSec=5
+LimitCORE=0
+MemoryMax=512M
+MemorySwapMax=0
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

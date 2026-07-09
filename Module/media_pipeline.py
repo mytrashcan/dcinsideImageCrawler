@@ -4,6 +4,7 @@ import logging
 import discord
 
 from Module.embeds import make_image_embed
+from Module.gallery_client import GalleryClient
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ class MediaPipeline:
         self.web_gallery_name = web_gallery_name
         self.discord_embed_color = discord_embed_color
         self.telegram_enabled = telegram_enabled
+        self.gallery_client = GalleryClient() if web_gallery_enabled else None
 
     def _get_channel(self, channel_id, *, warn_missing: bool = False):
         channel = self.client.get_channel(int(channel_id))
@@ -38,23 +40,17 @@ class MediaPipeline:
     def _gallery_title(self, title: str, global_idx: int) -> str:
         return title if global_idx == 0 else f"{title} - {global_idx + 1}"
 
-    def attach_to_web_gallery(self, data, filename, global_idx, title, link):
+    async def attach_to_web_gallery(self, data, filename, global_idx, title, link):
         """WEB_GALLERY=1 이면 이미지를 공유 웹 갤러리에 적재한다."""
-        if not self.web_gallery_enabled or not data:
+        if not self.gallery_client or not data:
             return {}
-        try:
-            from web_app import save_bytes_to_gallery
-
-            return save_bytes_to_gallery(
-                data,
-                filename,
-                title=self._gallery_title(title, global_idx),
-                link=link if global_idx == 0 else "",
-                gallery=self.web_gallery_name,
-            )
-        except (OSError, ValueError) as e:
-            logger.warning(f"[아카라이브] 웹 갤러리 적재 실패 ({filename}): {e}")
-            return {}
+        return await self.gallery_client.publish_async(
+            data,
+            filename,
+            title=self._gallery_title(title, global_idx),
+            link=link if global_idx == 0 else "",
+            gallery=self.web_gallery_name,
+        )
 
     async def send_single_to_channels(self, image_item, *, title=None, link=None, global_index=0):
         """단일 이미지를 모든 Discord 채널로 팬아웃한다."""
@@ -103,7 +99,7 @@ class MediaPipeline:
             if self.web_gallery_enabled:
                 base_title = gallery_title if gallery_title is not None else title
                 base_link = gallery_link if gallery_link is not None else link
-                self.attach_to_web_gallery(
+                await self.attach_to_web_gallery(
                     discord_buffer.getvalue(),
                     filename,
                     global_index,

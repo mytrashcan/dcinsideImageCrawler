@@ -219,7 +219,7 @@ class ArcaBot(discord.Client):
         # (fallback 경로는 _send_fallback 내부에서 개별 적재)
         if sent_ok and gallery_snapshot:
             for i, (data, filename) in enumerate(gallery_snapshot):
-                self.media_pipeline.attach_to_web_gallery(
+                await self.media_pipeline.attach_to_web_gallery(
                     data,
                     filename,
                     batch_index + i,
@@ -231,13 +231,13 @@ class ArcaBot(discord.Client):
         if batch_index > 0:
             await asyncio.sleep(INTER_IMAGE_DELAY)
 
-    def _save_to_web_gallery(self, data: bytes, filename: str,
-                             global_idx: int, title: str, link: str) -> object:
+    async def _save_to_web_gallery(self, data: bytes, filename: str,
+                                   global_idx: int, title: str, link: str) -> object:
         """WEB_GALLERY=1 이면 전송된 이미지를 공유 웹 갤러리에 적재한다.
 
         첫 번째 이미지에는 원본 제목, 이후 이미지에는 '제목 - N' 형식으로 표시한다.
         """
-        self.media_pipeline.attach_to_web_gallery(data, filename, global_idx, title, link)
+        await self.media_pipeline.attach_to_web_gallery(data, filename, global_idx, title, link)
 
     async def _send_fallback(self, channel: object, batch: list[dict[str, object]], title: str,
                               link: str, batch_index: int) -> object:
@@ -261,7 +261,7 @@ class ArcaBot(discord.Client):
                     file=discord.File(buffer, filename=filename),
                     embed=embed,
                 )
-                self._save_to_web_gallery(data, filename, global_idx, title, link)
+                await self._save_to_web_gallery(data, filename, global_idx, title, link)
             except discord.HTTPException as e2:
                 if e2.status == 413:
                     # 재압축 시도
@@ -277,7 +277,7 @@ class ArcaBot(discord.Client):
                             file=discord.File(recompressed, filename=filename),
                             embed=embed,
                         )
-                        self._save_to_web_gallery(data, filename, global_idx, title, link)
+                        await self._save_to_web_gallery(data, filename, global_idx, title, link)
                 else:
                     logger.error(f"[아카라이브] fallback 전송 실패: {e2}")
 

@@ -37,6 +37,12 @@ class AppConfig:
     web_image_ttl_seconds: int = 10800  # 3 hours
     web_feed_max_items: int = 120
     web_thumb_width: int = 480
+    web_memory_max_mb: int = 256
+    web_image_max_mb: int = 4
+    web_ingest_max_mb: int = 12
+    web_freshness_seconds: int = 900
+    web_gallery_url: str = "http://127.0.0.1:8000"
+    web_ingest_token: str = ""
     web_maintenance: bool = False
     web_maintenance_file: str = ""
     web_gallery: bool = False
@@ -73,6 +79,12 @@ class AppConfig:
             web_image_ttl_seconds=int(os.getenv("WEB_IMAGE_TTL_SECONDS", str(3 * 60 * 60))),
             web_feed_max_items=int(os.getenv("WEB_FEED_MAX_ITEMS", "120")),
             web_thumb_width=int(os.getenv("WEB_THUMB_WIDTH", "480")),
+            web_memory_max_mb=int(os.getenv("WEB_MEMORY_MAX_MB", "256")),
+            web_image_max_mb=int(os.getenv("WEB_IMAGE_MAX_MB", "4")),
+            web_ingest_max_mb=int(os.getenv("WEB_INGEST_MAX_MB", "12")),
+            web_freshness_seconds=int(os.getenv("WEB_FRESHNESS_SECONDS", "900")),
+            web_gallery_url=os.getenv("WEB_GALLERY_URL", "http://127.0.0.1:8000"),
+            web_ingest_token=os.getenv("WEB_INGEST_TOKEN", ""),
             web_maintenance=os.getenv("WEB_MAINTENANCE") == "1",
             web_maintenance_file=os.getenv("WEB_MAINTENANCE_FILE", ""),
             web_gallery=os.getenv("WEB_GALLERY") == "1",

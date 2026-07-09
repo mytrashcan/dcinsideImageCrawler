@@ -50,10 +50,9 @@ async def main(gallery_name: object) -> object:
             telegram_chat_id=TELEGRAM_CHAT_ID,
             intents=intents,
         )
-        # WEB_GALLERY=1 이면 보낸 이미지를 공유 웹 갤러리 디렉터리에도 적재한다.
-        # (run_web_server.py가 이 디렉터리를 읽어 한 페이지에 모아 보여줌)
+        # WEB_GALLERY=1 이면 보낸 이미지를 웹 서버의 bounded memory store로 전달한다.
         if app_config.web_gallery:
-            from web_app import attach_web_gallery
+            from Module.gallery_client import attach_web_gallery
 
             attach_web_gallery(bot.message_sender, gallery_name)
 

@@ -128,9 +128,18 @@ def _services_panel(health: object, services: object) -> object:
         items = f"[bold]{health.get('items', 0)}[/] / {app_config.web_feed_max_items}"
         ttl_h = health.get("ttl", 0) / 3600
         ttl = f"{ttl_h:.1f}h"
+        used_mb = health.get("memory_bytes", 0) / 1024 / 1024
+        limit_mb = health.get("memory_limit_bytes", 0) / 1024 / 1024
+        memory = f"{used_mb:.1f} / {limit_mb:.0f} MB"
+        latest_age = health.get("latest_age_seconds")
+        freshness = (
+            Text("정상", style="green")
+            if health.get("fresh", True)
+            else Text(f"지연 ({latest_age:.0f}s)", style="bold yellow")
+        )
     else:
         web = Text("● DOWN", style="bold red")
-        items, ttl = "-", "-"
+        items, ttl, memory, freshness = "-", "-", "-", Text("-", style="dim")
 
     if health and health.get("maintenance"):
         maint = Text("🛠 점검중 (down)", style="bold yellow")
@@ -142,6 +151,8 @@ def _services_panel(health: object, services: object) -> object:
     t.add_row("웹 서버", web)
     t.add_row("주소", f"[link={BASE}]{BASE}[/]")
     t.add_row("피드 이미지", items)
+    t.add_row("메모리", memory)
+    t.add_row("수집 상태", freshness)
     t.add_row("TTL", ttl)
     t.add_row("운영 상태", maint)
 
