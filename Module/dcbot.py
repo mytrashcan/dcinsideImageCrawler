@@ -6,8 +6,8 @@ import discord
 
 from Module.crawler import DCInsideCrawler
 from Module.image_handler import ImageHandler
-from Module.message_sender import MessageSender
 from Module.media_pipeline import MediaPipeline
+from Module.message_sender import MessageSender
 
 logger = logging.getLogger(__name__)
 
