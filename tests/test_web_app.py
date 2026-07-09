@@ -19,8 +19,15 @@ PNG_BYTES = (
 
 def make_client(monkeypatch: object, tmp_path: object, ttl_seconds: object=3600) -> object:
     monkeypatch.setenv("WEB_STATIC_DIR", str(tmp_path / "web_static"))
-    monkeypatch.setenv("WEB_IMAGE_TTL_SECONDS", str(ttl_seconds))
     monkeypatch.setenv("TURNSTILE_SECRET", "")
+    # AppConfig is loaded once at import time, but test_message_sender.py's
+    # importlib.reload(config) creates a NEW app_config singleton. web_app.py
+    # still references the PRE-reload object, so patching Module.config.app_config
+    # won't affect web_app._ttl(). Patch web_app's reference directly.
+    import web_app as _wa
+
+    _wa.app_config.web_image_ttl_seconds = ttl_seconds
+    _wa.app_config.web_static_dir = str(tmp_path / "web_static")
     return TestClient(create_app())
 
 

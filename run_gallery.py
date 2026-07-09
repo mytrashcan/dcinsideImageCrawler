@@ -3,11 +3,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import sys
 
-# config는 arca_crawler보다 먼저 import해야 함 (arca_crawler._ARCA_SOCKS_PROXY가 모듈 로드 시점에 env를 읽음)
-from Module.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TOKEN, get_discord_intents, validate_required_env  # isort: skip
+# config는 arca_crawler보다 먼저 import해야 함 (arca_crawler가 app_config로 프록시를 읽음)
+from Module.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TOKEN, app_config, get_discord_intents, validate_required_env  # isort: skip
 from Module.arca_bot import ArcaBot
 from Module.dcbot import DCBot
 
@@ -53,7 +52,7 @@ async def main(gallery_name: object) -> object:
         )
         # WEB_GALLERY=1 이면 보낸 이미지를 공유 웹 갤러리 디렉터리에도 적재한다.
         # (run_web_server.py가 이 디렉터리를 읽어 한 페이지에 모아 보여줌)
-        if os.getenv("WEB_GALLERY") == "1":
+        if app_config.web_gallery:
             from web_app import attach_web_gallery
 
             attach_web_gallery(bot.message_sender, gallery_name)

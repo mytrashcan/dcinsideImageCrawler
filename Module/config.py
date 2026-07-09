@@ -1,46 +1,132 @@
-from __future__ import annotations
-
 # config.py
 import logging
 import os
 import sys
+from dataclasses import dataclass
+from pathlib import Path
 
 import discord
 from dotenv import load_dotenv
 
 load_dotenv()
 
-TOKEN = os.getenv("DISCORD_TOKEN")
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHANNEL")
+logger = logging.getLogger(__name__)
 
-def validate_required_env() -> object:
-    """필수 환경변수 검증 (봇 시작 시 호출 — import 시점에는 검증하지 않음)"""
-    required = {"DISCORD_TOKEN": TOKEN, "TELEGRAM_TOKEN": TELEGRAM_BOT_TOKEN, "TELEGRAM_CHANNEL": TELEGRAM_CHAT_ID}
-    missing = [k for k, v in required.items() if not v]
-    if missing:
-        print(f"필수 환경변수 누락: {', '.join(missing)}")
-        print(".env 파일을 확인해주세요.")
-        sys.exit(1)
 
-# 로깅 설정
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+@dataclass
+class AppConfig:
+    """Centralized application configuration loaded from environment variables.
+
+    Usage:
+        from Module.config import app_config
+        token = app_config.discord_token
+    """
+
+    # Discord
+    discord_token: str = ""
+    discord_max_size_mb: int = 10
+
+    # Telegram
+    telegram_token: str = ""
+    telegram_chat_id: str = ""
+
+    # Web gallery
+    web_static_dir: str = "web_static"
+    web_host: str = "127.0.0.1"
+    web_port: int = 8000
+    web_image_ttl_seconds: int = 10800  # 3 hours
+    web_feed_max_items: int = 120
+    web_thumb_width: int = 480
+    web_maintenance: bool = False
+    web_maintenance_file: str = ""
+    web_gallery: bool = False
+
+    # Turnstile (Cloudflare bot protection)
+    turnstile_sitekey: str = ""
+    turnstile_secret: str = ""
+
+    # Arca (SOCKS proxy for arcalive crawler)
+    arca_socks_proxy: str = ""
+
+    # Dashboard
+    dash_host: str = "127.0.0.1"
+    dash_base_url: str = ""
+
+    @classmethod
+    def from_env(cls) -> "AppConfig":
+        """Build an AppConfig instance by reading all environment variables."""
+        # DISCORD_MAX_SIZE_MB with safe fallback
+        try:
+            discord_max_size_mb_val = int(float(os.getenv("DISCORD_MAX_SIZE_MB", "10")))
+        except ValueError:
+            print("DISCORD_MAX_SIZE_MB 값이 잘못되었습니다. 기본값 10MB를 사용합니다.")
+            discord_max_size_mb_val = 10
+
+        return cls(
+            discord_token=os.getenv("DISCORD_TOKEN", ""),
+            discord_max_size_mb=discord_max_size_mb_val,
+            telegram_token=os.getenv("TELEGRAM_TOKEN", ""),
+            telegram_chat_id=os.getenv("TELEGRAM_CHANNEL", ""),
+            web_static_dir=os.getenv("WEB_STATIC_DIR", "web_static"),
+            web_host=os.getenv("WEB_HOST", "127.0.0.1"),
+            web_port=int(os.getenv("WEB_PORT", "8000")),
+            web_image_ttl_seconds=int(os.getenv("WEB_IMAGE_TTL_SECONDS", str(3 * 60 * 60))),
+            web_feed_max_items=int(os.getenv("WEB_FEED_MAX_ITEMS", "120")),
+            web_thumb_width=int(os.getenv("WEB_THUMB_WIDTH", "480")),
+            web_maintenance=os.getenv("WEB_MAINTENANCE") == "1",
+            web_maintenance_file=os.getenv("WEB_MAINTENANCE_FILE", ""),
+            web_gallery=os.getenv("WEB_GALLERY") == "1",
+            turnstile_sitekey=os.getenv("TURNSTILE_SITEKEY", ""),
+            turnstile_secret=os.getenv("TURNSTILE_SECRET", ""),
+            arca_socks_proxy=os.getenv("ARCA_SOCKS_PROXY", ""),
+            dash_host=os.getenv("DASH_HOST", "127.0.0.1"),
+            dash_base_url=os.getenv("DASH_BASE_URL", "").strip().rstrip("/"),
+        )
+
+    @property
+    def discord_max_size_bytes(self) -> int:
+        """Discord max upload size in bytes."""
+        return self.discord_max_size_mb * 1024 * 1024
+
+    @property
+    def maintenance_file_path(self) -> Path:
+        """Path to the maintenance flag file."""
+        if self.web_maintenance_file:
+            return Path(self.web_maintenance_file)
+        return Path(self.web_static_dir).parent / ".maintenance"
+
+    def validate_required(self) -> None:
+        """Check that all required environment variables are set; exit if not."""
+        required = {
+            "DISCORD_TOKEN": self.discord_token,
+            "TELEGRAM_TOKEN": self.telegram_token,
+            "TELEGRAM_CHANNEL": self.telegram_chat_id,
+        }
+        missing = [k for k, v in required.items() if not v]
+        if missing:
+            print(f"필수 환경변수 누락: {', '.join(missing)}")
+            print(".env 파일을 확인해주세요.")
+            sys.exit(1)
+
+
+# ── Singleton instance (read once at import time) ─────────────────────
+app_config = AppConfig.from_env()
+
+# ====================================================================
+# Backward-compatible module-level re-exports
+#   Existing code that does `from Module.config import TOKEN` etc.
+#   will continue to work unchanged.
+# ====================================================================
+
+TOKEN = app_config.discord_token
+TELEGRAM_BOT_TOKEN = app_config.telegram_token
+TELEGRAM_CHAT_ID = app_config.telegram_chat_id
+DISCORD_MAX_SIZE = app_config.discord_max_size_bytes
+
+# ── Non-env-derived constants (stay at module level) ─────────────────
 
 # HTTP 요청 타임아웃 (초)
 REQUEST_TIMEOUT = 15
-
-# Discord 업로드 제한 (MB) — 2024년 9월부터 무료(부스트 없는) 서버는 10MB
-# (부스트 레벨 2: 50MB, 레벨 3: 100MB — 서버에 맞게 .env의 DISCORD_MAX_SIZE_MB로 조정)
-_DEFAULT_DISCORD_MAX_SIZE_MB = 10
-try:
-    DISCORD_MAX_SIZE = int(float(os.getenv("DISCORD_MAX_SIZE_MB", _DEFAULT_DISCORD_MAX_SIZE_MB)) * 1024 * 1024)
-except ValueError:
-    print(f"DISCORD_MAX_SIZE_MB 값이 잘못되었습니다. 기본값 {_DEFAULT_DISCORD_MAX_SIZE_MB}MB를 사용합니다.")
-    DISCORD_MAX_SIZE = _DEFAULT_DISCORD_MAX_SIZE_MB * 1024 * 1024
 
 # BeautifulSoup 파서 (lxml이 설치되어 있으면 사용 — html.parser보다 수 배 빠름)
 try:
@@ -63,11 +149,24 @@ HEADERS = {
     "Sec-Fetch-User": "?1",
     "Sec-Fetch-Dest": "document",
     "Accept-Encoding": "gzip, deflate, br",
-    "Accept-Language": "ko-KR,ko;q=0.9"
+    "Accept-Language": "ko-KR,ko;q=0.9",
 }
 
 # 디스코드 인텐트 설정
-def get_discord_intents() -> object:
+def get_discord_intents():
     intents = discord.Intents.default()
     intents.message_content = True
     return intents
+
+
+def validate_required_env() -> None:
+    """필수 환경변수 검증 (봇 시작 시 호출 — import 시점에는 검증하지 않음)."""
+    app_config.validate_required()
+
+
+# 로깅 설정
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)

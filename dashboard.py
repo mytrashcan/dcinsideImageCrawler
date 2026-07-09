@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import time
 import urllib.request
 from datetime import datetime
@@ -31,11 +30,10 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-DASH_HOST = os.getenv("DASH_HOST", "127.0.0.1")
-PORT = int(os.getenv("WEB_PORT", "8000"))
-_REMOTE_URL = os.getenv("DASH_BASE_URL", "").strip().rstrip("/")
-BASE = _REMOTE_URL or f"http://{DASH_HOST}:{PORT}"
-REMOTE = bool(_REMOTE_URL)  # 원격(공개 API)이면 크롤러 프로세스는 이 기기에서 안 보임
+from Module.config import app_config
+
+BASE = app_config.dash_base_url or f"http://{app_config.dash_host}:{app_config.web_port}"
+REMOTE = bool(app_config.dash_base_url)  # 원격(공개 API)이면 크롤러 프로세스는 이 기기에서 안 보임
 
 BANNER = r"""
  ___  ___ ___ __  __ ___    ___   _   _    _    ___ _____   __
@@ -127,7 +125,7 @@ def _services_panel(health: object, services: object) -> object:
 
     if health and health.get("ok"):
         web = Text("● UP", style="bold green")
-        items = f"[bold]{health.get('items', 0)}[/] / {os.getenv('WEB_FEED_MAX_ITEMS', '120')}"
+        items = f"[bold]{health.get('items', 0)}[/] / {app_config.web_feed_max_items}"
         ttl_h = health.get("ttl", 0) / 3600
         ttl = f"{ttl_h:.1f}h"
     else:

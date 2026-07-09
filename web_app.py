@@ -29,13 +29,14 @@ from fastapi import FastAPI, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from Module.config import app_config
 from Module.lru_cache import LRUCache
 
 ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 
 
 def _static_dir() -> Path:
-    return Path(os.getenv("WEB_STATIC_DIR", "web_static"))
+    return Path(app_config.web_static_dir)
 
 
 def _upload_dir() -> Path:
@@ -53,15 +54,15 @@ def _thumb_dir() -> Path:
 
 def _thumb_width() -> int:
     """카드용 썸네일 최대 폭(px). 0이면 썸네일 생성 비활성화."""
-    return int(os.getenv("WEB_THUMB_WIDTH", "480"))
+    return app_config.web_thumb_width
 
 
 def _ttl() -> int:
-    return int(os.getenv("WEB_IMAGE_TTL_SECONDS", str(3 * 60 * 60)))
+    return app_config.web_image_ttl_seconds
 
 
 def _max_items() -> int:
-    return int(os.getenv("WEB_FEED_MAX_ITEMS", "120"))
+    return app_config.web_feed_max_items
 
 
 def _ext_for(filename: str) -> str:
@@ -355,11 +356,11 @@ _TS_TTL = 86400  # 한 번 통과하면 24시간 유지
 
 
 def _ts_sitekey() -> str:
-    return os.getenv("TURNSTILE_SITEKEY", "")
+    return app_config.turnstile_sitekey
 
 
 def _ts_secret() -> str:
-    return os.getenv("TURNSTILE_SECRET", "")
+    return app_config.turnstile_secret
 
 
 def _ts_enabled() -> bool:
@@ -406,11 +407,14 @@ def _ts_siteverify(token: str, remoteip: str) -> bool:
 # 플래그 파일이 존재하거나 WEB_MAINTENANCE=1 이면 점검 페이지를 보여준다.
 # dcselfie.sh down/up 으로 토글(웹 서버 재시작 없이 즉시 반영).
 def _maintenance_file() -> Path:
-    return Path(os.getenv("WEB_MAINTENANCE_FILE", str(_static_dir().parent / ".maintenance")))
+    cfg = app_config.maintenance_file_path
+    if cfg.name != ".maintenance":
+        return cfg
+    return Path(app_config.web_static_dir).parent / ".maintenance"
 
 
 def _maintenance_on() -> bool:
-    return os.getenv("WEB_MAINTENANCE") == "1" or _maintenance_file().exists()
+    return app_config.web_maintenance or _maintenance_file().exists()
 
 
 def create_app() -> FastAPI:

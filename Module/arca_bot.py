@@ -12,13 +12,13 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-import os
 import random
 
 import discord
 import requests
 
 from Module.arca_crawler import ArcaliveCrawler
+from Module.config import app_config
 from Module.embeds import make_image_embed
 from Module.image_handler import ImageHandler
 from Module.media_pipeline import MediaPipeline
@@ -51,7 +51,7 @@ class ArcaBot(discord.Client):
         self.base_url = base_url
         self.channel_ids = channel_ids
         self.web_gallery_name = gallery_name
-        self.web_gallery_enabled = os.getenv("WEB_GALLERY") == "1"
+        self.web_gallery_enabled = app_config.web_gallery
         self.crawler = ArcaliveCrawler(base_url)
         self.image_handler = ImageHandler()
         # Telegram 없이 Discord 전용 MessageSender
