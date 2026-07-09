@@ -5,6 +5,7 @@ DCInsideImageCrawler의 Module/crawler.py와 동일한 인터페이스를 제공
 - 게시글 내 모든 이미지를 추출 (DCInside는 최상단 1개만)
 - 아카라이브 전용 HTML 셀렉터 사용
 """
+from __future__ import annotations
 import logging
 import os
 import re
@@ -31,7 +32,7 @@ def _mask_proxy(url: str) -> str:
     return re.sub(r"//[^/@]+@", "//***:***@", url)
 
 
-def _create_session():
+def _create_session() -> object:
     """cloudscraper 세션 생성. ARCA_SOCKS_PROXY가 설정돼 있으면 SOCKS 경유."""
     s = cloudscraper.create_scraper(
         browser={"browser": "chrome", "platform": "windows", "desktop": True, "mobile": False},
@@ -50,14 +51,14 @@ def _create_session():
 class ArcaliveCrawler:
     """아카라이브 게시글 크롤러."""
 
-    def __init__(self, base_url, session=None):
+    def __init__(self, base_url: object, session: object=None) -> None:
         self.base_url = base_url
         self.sent_items = LRUCache()
         self.session = session or _create_session()
 
     # ---------- 포스트 목록 파싱 ----------
 
-    def get_latest_posts(self, max_posts=5):
+    def get_latest_posts(self, max_posts: object=5) -> object:
         try:
             res = self.session.get(self.base_url, timeout=15)
             res.raise_for_status()
@@ -91,7 +92,7 @@ class ArcaliveCrawler:
 
         return new_posts[:max_posts]
 
-    def _parse_hybrid_row(self, vrow):
+    def _parse_hybrid_row(self, vrow: object) -> object:
         title_el = vrow.select_one("a.title.hybrid-title")
         if not title_el:
             return None
@@ -106,7 +107,7 @@ class ArcaliveCrawler:
             "post_id": self._extract_post_id(href),
         }
 
-    def _parse_column_row(self, vrow):
+    def _parse_column_row(self, vrow: object) -> object:
         href = vrow.get("href", "")
         if not href:
             return None
@@ -128,7 +129,7 @@ class ArcaliveCrawler:
 
     # ---------- 개별 게시글 이미지 추출 ----------
 
-    def extract_all_images(self, post_url: str) -> list[dict]:
+    def extract_all_images(self, post_url: str) -> list[dict[str, str]]:
         try:
             res = self.session.get(post_url, timeout=15)
             res.raise_for_status()
@@ -153,7 +154,13 @@ class ArcaliveCrawler:
         logger.info(f"아카라이브 게시글 이미지 {len(images)}개 발견: {post_url}")
         return images
 
-    def _collect_image(self, img_tag, images: list, seen_urls: set, post_url: str = ""):
+    def _collect_image(
+        self,
+        img_tag: object,
+        images: list[dict[str, str]],
+        seen_urls: set[str],
+        post_url: str = "",
+    ) -> None:
         classes = img_tag.get("class", [])
         if "arca-emoticon" in classes or img_tag.get("data-type") == "emoticon":
             return

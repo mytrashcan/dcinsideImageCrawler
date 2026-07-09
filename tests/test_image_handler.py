@@ -1,3 +1,4 @@
+from __future__ import annotations
 import io
 
 from PIL import Image
@@ -8,13 +9,13 @@ from Module.image_handler import (
 )
 
 
-def make_png_bytes(size=(64, 64), color=(255, 0, 0)):
+def make_png_bytes(size: object=(64, 64), color: object=(255, 0, 0)) -> object:
     buffer = io.BytesIO()
     Image.new("RGB", size, color).save(buffer, format="PNG")
     return buffer.getvalue()
 
 
-def make_gif_bytes(frames=3, size=(64, 64)):
+def make_gif_bytes(frames: object=3, size: object=(64, 64)) -> object:
     images = [Image.new("RGB", size, (i * 40, 0, 0)) for i in range(frames)]
     buffer = io.BytesIO()
     images[0].save(buffer, format="GIF", save_all=True, append_images=images[1:], duration=100, loop=0)
@@ -22,18 +23,18 @@ def make_gif_bytes(frames=3, size=(64, 64)):
 
 
 class TestHashCache:
-    def test_first_time_returns_false_then_true(self):
+    def test_first_time_returns_false_then_true(self) -> None:
         handler = ImageHandler()
         assert handler.is_duplicate("abc") is False
         assert handler.is_duplicate("abc") is True
 
-    def test_cache_is_bounded(self):
+    def test_cache_is_bounded(self) -> None:
         handler = ImageHandler()
         for i in range(MAX_HASH_CACHE_SIZE + 10):
             handler.is_duplicate(str(i))
         assert len(handler._seen_hashes) <= MAX_HASH_CACHE_SIZE
 
-    def test_clear(self):
+    def test_clear(self) -> None:
         handler = ImageHandler()
         handler.is_duplicate("abc")
         handler.clear_seen_hashes()
@@ -41,7 +42,7 @@ class TestHashCache:
 
 
 class TestProcessImage:
-    def test_small_image_passes_through_unchanged(self):
+    def test_small_image_passes_through_unchanged(self) -> None:
         handler = ImageHandler()
         data = make_png_bytes()
 
@@ -51,19 +52,19 @@ class TestProcessImage:
         assert telegram_buffer.read() == data
         assert is_gif is False
 
-    def test_gif_detected_by_extension(self):
+    def test_gif_detected_by_extension(self) -> None:
         handler = ImageHandler()
         data = make_gif_bytes()
         _, _, is_gif = handler.process_image(data, "test.gif")
         assert is_gif is True
 
-    def test_gif_detected_by_magic_bytes(self):
+    def test_gif_detected_by_magic_bytes(self) -> None:
         handler = ImageHandler()
         data = make_gif_bytes()
         _, _, is_gif = handler.process_image(data, "no_extension")
         assert is_gif is True
 
-    def test_buffers_are_independent(self):
+    def test_buffers_are_independent(self) -> None:
         handler = ImageHandler()
         data = make_png_bytes()
         discord_buffer, telegram_buffer, _ = handler.process_image(data, "test.png")
@@ -71,7 +72,7 @@ class TestProcessImage:
         discord_buffer.read()
         assert telegram_buffer.tell() == 0
 
-    def test_telegram_reuses_discord_compression(self, monkeypatch):
+    def test_telegram_reuses_discord_compression(self, monkeypatch: object) -> None:
         """두 제한이 같으면 압축은 한 번만 수행하고 결과를 재사용해야 함"""
         handler = ImageHandler()
         data = make_png_bytes(size=(800, 800))
@@ -82,7 +83,7 @@ class TestProcessImage:
         calls = []
         original_compress = handler.compress_image
 
-        def counting_compress(*args, **kwargs):
+        def counting_compress(*args: object, **kwargs: object) -> object:
             calls.append(args)
             return original_compress(*args, **kwargs)
 
@@ -96,7 +97,7 @@ class TestProcessImage:
         discord_buffer.read()
         assert telegram_buffer.tell() == 0
 
-    def test_telegram_compresses_separately_when_discord_result_too_large(self, monkeypatch):
+    def test_telegram_compresses_separately_when_discord_result_too_large(self, monkeypatch: object) -> None:
         """Discord 압축 결과가 Telegram 제한을 넘으면(부스트 서버) Telegram은 따로 압축해야 함"""
         handler = ImageHandler()
         data = b"x" * 1000
@@ -105,7 +106,7 @@ class TestProcessImage:
 
         calls = []
 
-        def fake_compress(data_arg, target_arg, filename):
+        def fake_compress(data_arg: object, target_arg: object, filename: object) -> object:
             calls.append(target_arg)
             result = b"y" * (target_arg - 10)
             return io.BytesIO(result), len(result)
@@ -120,7 +121,7 @@ class TestProcessImage:
 
 
 class TestCompress:
-    def test_compress_image_reaches_target(self):
+    def test_compress_image_reaches_target(self) -> None:
         handler = ImageHandler()
         data = make_png_bytes(size=(800, 800))
         target = len(data) // 2
@@ -130,7 +131,7 @@ class TestCompress:
         assert size <= target
         assert output.read(2) == b"\xff\xd8"  # JPEG 매직 바이트
 
-    def test_compress_gif_reaches_target(self):
+    def test_compress_gif_reaches_target(self) -> None:
         handler = ImageHandler()
         data = make_gif_bytes(frames=12, size=(400, 400))
         target = int(len(data) * 0.8)
@@ -140,7 +141,7 @@ class TestCompress:
         assert size <= target
         assert output.read(6) in (b"GIF87a", b"GIF89a")
 
-    def test_compress_image_invalid_data_returns_original(self):
+    def test_compress_image_invalid_data_returns_original(self) -> None:
         handler = ImageHandler()
         data = b"not an image"
         output, size = handler.compress_image(data, 10, "broken.png")

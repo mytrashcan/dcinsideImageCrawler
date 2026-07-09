@@ -5,6 +5,7 @@
   - run_web_server.py  (웹 서버 1개)
 를 따로 실행한다. (README의 "web gallery" 절 참고)
 """
+from __future__ import annotations
 import asyncio
 import json
 import os
@@ -18,7 +19,7 @@ from Module.dcbot import DCBot
 from web_app import attach_web_gallery, create_app
 
 
-def load_gallery_config(gallery_name):
+def load_gallery_config(gallery_name: object) -> object:
     with open("galleries.json", encoding="utf-8") as f:
         galleries = json.load(f)
     if gallery_name not in galleries:
@@ -28,7 +29,7 @@ def load_gallery_config(gallery_name):
     return galleries[gallery_name]
 
 
-def start_web_gallery():
+def start_web_gallery() -> object:
     import uvicorn
 
     # 기본값은 로컬 전용(127.0.0.1) — 외부 공개는 리버스 프록시(Caddy 등)를 통해서만.
@@ -39,7 +40,7 @@ def start_web_gallery():
     uvicorn.Server(cfg).run()
 
 
-async def main(gallery_name):
+async def main(gallery_name: object) -> object:
     config = load_gallery_config(gallery_name)
     intents = get_discord_intents()
 

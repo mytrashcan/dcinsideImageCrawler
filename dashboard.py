@@ -14,6 +14,7 @@
 psutil이 로컬 프로세스만 읽을 수 있어 원격에서는 볼 수 없다 — 그건 SSH로 서버에
 들어가 이 스크립트를 직접 돌리거나 `./dcselfie.sh status`로 확인해야 한다.
 """
+from __future__ import annotations
 import argparse
 import json
 import os
@@ -46,7 +47,7 @@ BANNER = r"""
 ROSE = "#e60023"
 ARCA_BLUE = "#00A3FF"
 
-def _configs():
+def _configs() -> object:
     try:
         with open("galleries.json", encoding="utf-8") as f:
             return json.load(f)
@@ -54,7 +55,7 @@ def _configs():
         return {}
 
 
-def _gallery_type(name):
+def _gallery_type(name: object) -> object:
     """갤러리 소스 타입 (dc/arca)"""
     return "arca" if _configs().get(name, {}).get("type") == "arca" else "dc"
 
@@ -62,7 +63,7 @@ def _gallery_type(name):
 _UA = "Mozilla/5.0 (compatible; dcselfie-dashboard/1.0)"
 
 
-def _fetch(path, timeout=2.0 if not REMOTE else 5.0):
+def _fetch(path: object, timeout: object=2.0 if not REMOTE else 5.0) -> object:
     req = urllib.request.Request(BASE + path, headers={"User-Agent": _UA})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -71,7 +72,7 @@ def _fetch(path, timeout=2.0 if not REMOTE else 5.0):
         return None
 
 
-def _scan_procs():
+def _scan_procs() -> object:
     """run_gallery.py / launcher.py / run_web_server.py 프로세스 수집."""
     crawlers, services = {}, {}
     for p in psutil.process_iter(["pid", "cmdline", "create_time"]):
@@ -90,7 +91,7 @@ def _scan_procs():
     return crawlers, services
 
 
-def _uptime(p):
+def _uptime(p: object) -> object:
     try:
         secs = int(time.time() - p.info["create_time"])
     except (KeyError, psutil.NoSuchProcess):
@@ -100,14 +101,14 @@ def _uptime(p):
     return f"{h}h{m:02d}m" if h else f"{m}m{s:02d}s"
 
 
-def _rss_mb(p):
+def _rss_mb(p: object) -> object:
     try:
         return p.memory_info().rss / 1024 / 1024
     except (psutil.NoSuchProcess, psutil.AccessDenied):
         return 0.0
 
 
-def _time_ago(epoch):
+def _time_ago(epoch: object) -> object:
     diff = int(time.time() - epoch)
     if diff < 60:
         return "방금"
@@ -118,7 +119,7 @@ def _time_ago(epoch):
     return f"{diff // 86400}일 전"
 
 
-def _services_panel(health, services):
+def _services_panel(health: object, services: object) -> object:
     t = Table.grid(padding=(0, 2))
     t.add_column(justify="right", style="bold")
     t.add_column()
@@ -155,7 +156,7 @@ def _services_panel(health, services):
     return Panel(t, title="[bold]서비스 상태", border_style=ROSE, width=42)
 
 
-def _crawlers_panel(crawlers):
+def _crawlers_panel(crawlers: object) -> object:
     configs = _configs()
     galleries = list(configs.keys())
 
@@ -163,7 +164,7 @@ def _crawlers_panel(crawlers):
     dc_galleries = [g for g in galleries if configs[g].get("type") != "arca"]
     arca_galleries = [g for g in galleries if configs[g].get("type") == "arca"]
 
-    def _crawler_table(g_list, title, border_style):
+    def _crawler_table(g_list: object, title: object, border_style: object) -> object:
         table = Table(expand=True, border_style="grey39")
         table.add_column("갤러리", style="bold")
         table.add_column("상태", justify="center")
@@ -194,7 +195,7 @@ def _crawlers_panel(crawlers):
     return top
 
 
-def _remote_note_panel():
+def _remote_note_panel() -> object:
     msg = Text.from_markup(
         "🌐 원격 모드입니다 — 크롤러 프로세스(PID/메모리/업타임)는 psutil이 "
         "로컬 프로세스만 읽을 수 있어 여기서는 볼 수 없습니다.\n"
@@ -206,7 +207,7 @@ def _remote_note_panel():
     return Panel(msg, title="[bold]크롤러 (원격에서는 미지원)", border_style="grey39")
 
 
-def _recent_panel(feed):
+def _recent_panel(feed: object) -> object:
     table = Table(expand=True, border_style="grey39")
     table.add_column("최근 자짤", style="bold", ratio=3, no_wrap=True)
     table.add_column("시간", justify="right", ratio=1, style="grey62")
@@ -220,7 +221,7 @@ def _recent_panel(feed):
     return Panel(table, title="[bold]실시간 피드", border_style=ROSE)
 
 
-def render():
+def render() -> object:
     health = _fetch("/healthz")
     feed = _fetch("/feed?limit=12") or []
     crawlers, services = ({}, {}) if REMOTE else _scan_procs()
@@ -238,7 +239,7 @@ def render():
     return Group(banner, clock, Text(), top, Text(), bottom)
 
 
-def main():
+def main() -> object:
     ap = argparse.ArgumentParser()
     ap.add_argument("--once", action="store_true", help="한 프레임만 출력")
     ap.add_argument("-i", "--interval", type=float, default=2.0, help="갱신 주기(초)")

@@ -3,10 +3,11 @@
 dcbot / arca_bot / message_sender 가 모두 동일한
 `Embed(title, url, color) + set_image(attachment://...)` 패턴을 쓰므로 한 곳으로 모은다.
 """
+from __future__ import annotations
 import discord
 
 
-def make_image_embed(filename, *, title=None, url=None, color, footer=None):
+def make_image_embed(filename: object, *, title: object=None, url: object=None, color: object, footer: object=None) -> object:
     """첨부 이미지를 보여주는 임베드를 만든다.
 
     title/url이 있으면 제목이 하이퍼링크가 되고, footer가 있으면 하단에 표시한다.

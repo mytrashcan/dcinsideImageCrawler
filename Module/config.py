@@ -1,3 +1,4 @@
+from __future__ import annotations
 # config.py
 import logging
 import os
@@ -12,7 +13,7 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHANNEL")
 
-def validate_required_env():
+def validate_required_env() -> object:
     """필수 환경변수 검증 (봇 시작 시 호출 — import 시점에는 검증하지 않음)"""
     required = {"DISCORD_TOKEN": TOKEN, "TELEGRAM_TOKEN": TELEGRAM_BOT_TOKEN, "TELEGRAM_CHANNEL": TELEGRAM_CHAT_ID}
     missing = [k for k, v in required.items() if not v]
@@ -65,7 +66,7 @@ HEADERS = {
 }
 
 # 디스코드 인텐트 설정
-def get_discord_intents():
+def get_discord_intents() -> object:
     intents = discord.Intents.default()
     intents.message_content = True
     return intents

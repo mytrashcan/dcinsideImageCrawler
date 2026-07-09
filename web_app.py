@@ -10,6 +10,7 @@
 
 저장소가 없어 어느 프로세스에서든 동작하며, TTL이 지나면 파일이 실제로 사라진다.
 """
+from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
@@ -67,7 +68,7 @@ def _ext_for(filename: str) -> str:
     return ext if ext in ALLOWED_EXT else ".jpg"
 
 
-def _remove(paths):
+def _remove(paths: object) -> object:
     for p in paths:
         try:
             p.unlink(missing_ok=True)
@@ -248,7 +249,7 @@ def _rate_limited(bucket: dict, ip: str, window: float, max_count: int) -> bool:
     return count > max_count
 
 
-def like_image(image_id: str):
+def like_image(image_id: str) -> object:
     """이미지에 좋아요 +1. 사이드카(.json)의 likes 필드를 증가시키고 새 값을 반환한다."""
     if not _ID_RE.match(image_id or ""):
         return None
@@ -272,7 +273,7 @@ def like_image(image_id: str):
 
 
 # snapshot은 웹 서버 프로세스 1개에서만 호출되므로 별도 프로세스 락은 불필요하다.
-def snapshot(limit: int = 120) -> list[dict]:
+def snapshot(limit: int = 120) -> list[dict[str, object]]:
     up = _upload_dir()
     thumbs = _thumb_dir()
     cutoff = time.time() - _ttl()
@@ -308,7 +309,7 @@ def snapshot(limit: int = 120) -> list[dict]:
     return items[: min(limit, len(items))]
 
 
-def attach_web_gallery(message_sender, gallery: str = "") -> None:
+def attach_web_gallery(message_sender: object, gallery: str = "") -> None:
     """봇의 메시지 센더를 감싸, 디스코드/텔레그램으로 보낸 이미지를 웹 갤러리에도 적재한다.
 
     dcbot 코드는 건드리지 않는다. 디스코드가 먼저 전송되므로 title이 보존되고,
@@ -318,7 +319,7 @@ def attach_web_gallery(message_sender, gallery: str = "") -> None:
     original_discord = message_sender.send_to_discord
     original_telegram = message_sender.send_to_telegram
 
-    async def discord_with_web(channel, title, image_buffer, filename, url=None):
+    async def discord_with_web(channel: object, title: object, image_buffer: object, filename: object, url: object=None) -> object:
         try:
             return await original_discord(channel, title, image_buffer, filename, url)
         finally:
@@ -330,7 +331,7 @@ def attach_web_gallery(message_sender, gallery: str = "") -> None:
             except (OSError, ValueError):
                 pass
 
-    async def telegram_with_web(image_buffer, filename=None, is_gif=False, max_retries=3):
+    async def telegram_with_web(image_buffer: object, filename: object=None, is_gif: object=False, max_retries: object=3) -> object:
         data = None
         try:
             data = image_buffer.getvalue()
@@ -427,7 +428,7 @@ def create_app() -> FastAPI:
         return HTMLResponse(f.read_text(encoding="utf-8"))
 
     @app.middleware("http")
-    async def cache_control(request, call_next):
+    async def cache_control(request: object, call_next: object) -> object:
         path = request.url.path
         remaining = 0
         if path.startswith("/static/images/"):
@@ -449,7 +450,7 @@ def create_app() -> FastAPI:
         return resp
 
     @app.middleware("http")
-    async def security_headers(request, call_next):
+    async def security_headers(request: object, call_next: object) -> object:
         resp = await call_next(request)
         # 클릭재킹/MIME 스니핑/과도한 리퍼러 유출 방지 + HTTPS 유지. 부작용 위험이
         # 없는 헤더만 넣는다. CSP는 넣지 않음: 이 사이트는 AdSense/GA/Turnstile
@@ -469,7 +470,7 @@ def create_app() -> FastAPI:
         return HTMLResponse(body, status_code=503, headers={"Retry-After": "3600"})
 
     @app.get("/", response_class=HTMLResponse)
-    async def index():
+    async def index() -> object:
         if _maintenance_on():
             return _maintenance_response()
         idx = static_dir / "index.html"
@@ -480,27 +481,27 @@ def create_app() -> FastAPI:
         return HTMLResponse(html)
 
     @app.get("/policy", response_class=HTMLResponse)
-    async def policy():
+    async def policy() -> object:
         return _page("policy.html")
 
     @app.get("/privacy", response_class=HTMLResponse)
-    async def privacy():
+    async def privacy() -> object:
         return _page("privacy.html")
 
     @app.get("/about", response_class=HTMLResponse)
-    async def about():
+    async def about() -> object:
         return _page("about.html")
 
     @app.get("/changelog", response_class=HTMLResponse)
-    async def changelog():
+    async def changelog() -> object:
         return _page("changelog.html")
 
     @app.get("/request", response_class=HTMLResponse)
-    async def request_gallery():
+    async def request_gallery() -> object:
         return _page("request.html")
 
     @app.get("/ads.txt", response_class=PlainTextResponse)
-    async def ads_txt():
+    async def ads_txt() -> object:
         f = static_dir / "ads.txt"
         if f.exists():
             return PlainTextResponse(f.read_text(encoding="utf-8"))
@@ -519,8 +520,8 @@ def create_app() -> FastAPI:
         ("icon-192.png", "image/png"),
         ("icon-512.png", "image/png"),
     ):
-        def _make_favicon_route(fname=_fname, mime=_mime):
-            async def _serve():
+        def _make_favicon_route(fname: object=_fname, mime: object=_mime) -> object:
+            async def _serve() -> object:
                 f = static_dir / fname
                 if not f.exists():
                     return PlainTextResponse("", status_code=404)
@@ -530,7 +531,7 @@ def create_app() -> FastAPI:
         app.add_api_route(f"/{_fname}", _make_favicon_route(), methods=["GET"])
 
     @app.get("/.well-known/security.txt", response_class=PlainTextResponse)
-    async def security_txt():
+    async def security_txt() -> object:
         # RFC 9116: 보안 취약점 제보 연락처
         f = static_dir / "security.txt"
         if not f.exists():
@@ -539,7 +540,7 @@ def create_app() -> FastAPI:
                                  headers={"Cache-Control": "public, max-age=86400"})
 
     @app.get("/feed")
-    async def feed(request: Request, limit: int = Query(60, ge=1, le=200)):
+    async def feed(request: Request, limit: int = Query(60, ge=1, le=200)) -> object:
         if _rate_limited(_feed_ip_rate, _client_ip(request), _FEED_RATE_WINDOW, _FEED_RATE_MAX):
             return JSONResponse({"error": "too many requests"}, status_code=429)
         if _maintenance_on() and request.headers.get("cf-connecting-ip"):
@@ -552,7 +553,7 @@ def create_app() -> FastAPI:
         return JSONResponse(snapshot(limit))
 
     @app.post("/verify")
-    async def verify(request: Request):
+    async def verify(request: Request) -> object:
         if not _ts_enabled():
             return JSONResponse({"ok": True})
         try:
@@ -570,7 +571,7 @@ def create_app() -> FastAPI:
         return resp
 
     @app.post("/like/{image_id}")
-    async def like(image_id: str, request: Request):
+    async def like(image_id: str, request: Request) -> object:
         ip = _client_ip(request)
         if _rate_limited(_like_ip_rate, ip, _LIKE_RATE_WINDOW, _LIKE_RATE_MAX):
             return JSONResponse({"error": "too many requests"}, status_code=429)
@@ -590,7 +591,7 @@ def create_app() -> FastAPI:
         return JSONResponse({"id": image_id, "likes": n})
 
     @app.get("/healthz")
-    async def healthz():
+    async def healthz() -> object:
         items = snapshot(_max_items())
         return JSONResponse({
             "ok": True,
