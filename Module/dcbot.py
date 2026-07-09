@@ -40,8 +40,7 @@ class DCBot(discord.Client):
     async def start_crawling(self) -> object:
         while True:
             try:
-                # 동기 크롤러를 별도 스레드에서 실행하여 이벤트 루프 블로킹 방지
-                post = await asyncio.to_thread(self.crawler.get_latest_post)
+                post = await self.crawler.get_latest_post()
                 if post and post['has_image']:
                     await self.process_post(post)
             except discord.ConnectionClosed:
