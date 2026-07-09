@@ -7,6 +7,9 @@ Wants=network-online.target
 [Service]
 User=ubuntu
 WorkingDirectory=/home/ubuntu/dcinsideImageCrawler
+# systemd가 .env를 직접 읽도록 해 WEB_INGEST_TOKEN이 웹 프로세스에 항상 전달된다.
+# '-'는 초기 설치처럼 아직 .env가 없는 경우에도 서비스 등록 자체는 허용한다.
+EnvironmentFile=-/home/ubuntu/dcinsideImageCrawler/.env
 Environment=WEB_HOST=127.0.0.1
 Environment=WEB_PORT=8000
 ExecStart=/home/ubuntu/dcinsideImageCrawler/venv/bin/python run_web_server.py
