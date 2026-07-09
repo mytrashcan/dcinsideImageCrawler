@@ -58,6 +58,31 @@ async def test_dcbot_instantiation(bot):
 
 
 @pytest.mark.asyncio
+async def test_setup_hook_starts_only_one_crawler_task(bot):
+    """The reconnect-safe crawler task is created once."""
+    bot._run_crawler = AsyncMock()
+
+    await bot.setup_hook()
+    task = bot._crawler_task
+    await bot.setup_hook()
+    await task
+
+    assert bot._crawler_task is task
+    bot._run_crawler.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_on_ready_does_not_start_another_crawler_loop(bot):
+    """Discord may emit on_ready repeatedly after reconnects."""
+    bot.start_crawling = AsyncMock()
+
+    await bot.on_ready()
+    await bot.on_ready()
+
+    bot.start_crawling.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_process_post_with_images(mock_dependencies, bot):
     """process_post downloads images and calls send_to_discord + send_to_telegram."""
     _, image_handler_mock = mock_dependencies
