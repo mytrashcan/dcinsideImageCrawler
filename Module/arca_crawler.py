@@ -6,13 +6,13 @@ DCInsideImageCrawler의 Module/crawler.py와 동일한 인터페이스를 제공
 - 아카라이브 전용 HTML 셀렉터 사용
 """
 import logging
-import os
 import re
 from urllib.parse import urljoin
 
 import cloudscraper
 from bs4 import BeautifulSoup, SoupStrainer
 
+from Module.config import app_config
 from Module.lru_cache import LRUCache
 
 logger = logging.getLogger(__name__)
@@ -22,9 +22,6 @@ IMAGE_CDN_RE = re.compile(r"//ac[-a-z0-9]*\.namu\.la/")
 _VROW_STRAINER = SoupStrainer(attrs={"class": re.compile(r"\bvrow\b")})
 POST_SKIP_COUNT = 10
 
-# SOCKS 프록시 설정 (OCI → 맥 터널)
-_ARCA_SOCKS_PROXY = os.getenv("ARCA_SOCKS_PROXY", "")
-
 
 def _mask_proxy(url: str) -> str:
     """프록시 URL의 자격증명(user:pass@)을 로그에 노출하지 않도록 가린다."""
@@ -32,7 +29,7 @@ def _mask_proxy(url: str) -> str:
 
 
 def _create_session():
-    """cloudscraper 세션 생성. ARCA_SOCKS_PROXY가 설정돼 있으면 SOCKS 경유."""
+    """cloudscraper 세션 생성. app_config.arca_socks_proxy가 설정돼 있으면 SOCKS 경유."""
     s = cloudscraper.create_scraper(
         browser={"browser": "chrome", "platform": "windows", "desktop": True, "mobile": False},
     )
@@ -41,9 +38,10 @@ def _create_session():
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
     })
-    if _ARCA_SOCKS_PROXY:
-        s.proxies.update({"http": _ARCA_SOCKS_PROXY, "https": _ARCA_SOCKS_PROXY})
-        logger.info(f"아카라이브 SOCKS 프록시 사용: {_mask_proxy(_ARCA_SOCKS_PROXY)}")
+    proxy = app_config.arca_socks_proxy
+    if proxy:
+        s.proxies.update({"http": proxy, "https": proxy})
+        logger.info(f"아카라이브 SOCKS 프록시 사용: {_mask_proxy(proxy)}")
     return s
 
 

@@ -7,12 +7,13 @@
 """
 import asyncio
 import json
-import os
 import sys
 from threading import Thread
 
-# config는 arca_crawler보다 먼저 import해야 함 (arca_crawler._ARCA_SOCKS_PROXY가 모듈 로드 시점에 env를 읽음)
-from Module.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TOKEN, get_discord_intents, validate_required_env  # isort: skip
+import uvicorn
+
+# config는 arca_crawler보다 먼저 import해야 함 (arca_crawler가 app_config로 프록시를 읽음)
+from Module.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TOKEN, app_config, get_discord_intents, validate_required_env  # isort: skip
 from Module.arca_bot import ArcaBot
 from Module.dcbot import DCBot
 from web_app import attach_web_gallery, create_app
@@ -29,13 +30,9 @@ def load_gallery_config(gallery_name):
 
 
 def start_web_gallery():
-    import uvicorn
-
     # 기본값은 로컬 전용(127.0.0.1) — 외부 공개는 리버스 프록시(Caddy 등)를 통해서만.
     # 프록시 없이 직접 공개하려면 WEB_HOST=0.0.0.0 을 명시적으로 지정한다.
-    host = os.getenv("WEB_HOST", "127.0.0.1")
-    port = int(os.getenv("WEB_PORT", "8000"))
-    cfg = uvicorn.Config(create_app(), host=host, port=port, log_level="info")
+    cfg = uvicorn.Config(create_app(), host=app_config.web_host, port=app_config.web_port, log_level="info")
     uvicorn.Server(cfg).run()
 
 
@@ -52,8 +49,8 @@ async def main(gallery_name):
             print("필수 환경변수가 없습니다: DISCORD_TOKEN")
             sys.exit(1)
         # ArcaBot은 WEB_GALLERY=1 이면 내부에서 웹 갤러리에 적재한다.
-        # (생성자에서 환경변수를 읽으므로 봇 생성 전에 설정)
-        os.environ["WEB_GALLERY"] = "1"
+        # app_config는 module level에서 읽히므로 직접 덮어씀
+        app_config.web_gallery = True
         bot = ArcaBot(
             token=TOKEN,
             base_url=config["base_url"],
@@ -80,5 +77,6 @@ async def main(gallery_name):
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("사용법: python run_web_gallery.py <gallery_name>")
+        print("  WEB_GALLERY=1 로 웹 갤러리 연동")
         sys.exit(1)
     asyncio.run(main(sys.argv[1]))
