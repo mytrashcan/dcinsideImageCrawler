@@ -237,7 +237,7 @@ sudo systemctl enable --now dcselfie-launcher dcselfie-web
 
 Subsequent OCI deployments should use `./deploy_oci.sh`; it pulls main, creates the ingest secret when missing, refreshes dependencies, restarts web before crawlers, and verifies health.
 
-The launcher requires the web service and waits for its authenticated ingest endpoint before it starts crawlers. After changing the unit files, run `sudo systemctl daemon-reload`. For a manual restart, use `sudo systemctl restart dcselfie-web && sudo systemctl restart dcselfie-launcher`.
+The web service reads the project's `.env` through `EnvironmentFile`, so `WEB_INGEST_TOKEN` is available before Python starts. The launcher requires the web service and waits for its authenticated ingest endpoint before it starts crawlers. After changing the unit files, run `sudo systemctl daemon-reload`. For a manual restart, use `sudo systemctl restart dcselfie-web && sudo systemctl restart dcselfie-launcher`.
 
 Secrets (`DISCORD_TOKEN`, `ARCA_SOCKS_PROXY`, etc.) go in the project's `.env`, never in the unit files - see the warning in "Arcalive: Cloudflare bypass" above.
 
