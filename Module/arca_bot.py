@@ -20,6 +20,7 @@ from Module.arca_crawler import ArcaliveCrawler
 from Module.embeds import make_image_embed
 from Module.image_handler import ImageHandler
 from Module.message_sender import MessageSender
+from Module.media_pipeline import MediaPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,16 @@ class ArcaBot(discord.Client):
             telegram_bot_token=None,
             telegram_chat_id=None,
             image_handler=self.image_handler,
+        )
+        self.media_pipeline = MediaPipeline(
+            self.message_sender,
+            self,
+            self.channel_ids,
+            image_handler=self.image_handler,
+            web_gallery_enabled=self.web_gallery_enabled,
+            web_gallery_name=self.web_gallery_name,
+            discord_embed_color=ARCA_EMBED_COLOR,
+            telegram_enabled=False,
         )
 
     async def on_ready(self):
@@ -179,50 +190,26 @@ class ArcaBot(discord.Client):
                 logger.warning(f"[아카라이브] 채널 없음: {channel_id}")
                 continue
 
-            # 각 채널 전송 전에 버퍼 위치 리셋 (이전 채널 전송으로 소비되었을 수 있음)
-            for item in batch:
-                item["discord_buffer"].seek(0)
-
-            files = []
-            embeds = []
-
-            for i, item in enumerate(batch):
-                buffer = item["discord_buffer"]
-                filename = item["filename"]
-                global_idx = batch_index + i
-
-                # Discord.File 생성
-                discord_file = discord.File(buffer, filename=filename)
-                files.append(discord_file)
-
-                # 첫 번째 이미지에만 title+link+footer, 나머지는 제목 없음
-                if global_idx == 0:
-                    embed = make_image_embed(
-                        filename, title=title, url=link, color=ARCA_EMBED_COLOR,
-                        footer=f"아카라이브 · {len(batch)}개 이미지",
-                    )
-                else:
-                    embed = make_image_embed(filename, color=ARCA_EMBED_COLOR)
-                embeds.append(embed)
-
-            try:
-                await channel.send(files=files, embeds=embeds)
-                sent_ok = True
-                logger.info(
-                    f"[아카라이브] 배치 전송 완료: {title} "
-                    f"({batch_index + 1}~{batch_index + len(batch)}/{len(batch)})"
-                )
-            except discord.HTTPException as e:
-                logger.error(f"[아카라이브] Discord 전송 실패: {e.status} {e.text}")
-                # 413(파일 크기)이면 한 장씩 fallback 전송
-                if e.status == 413:
-                    await self._send_fallback(channel, batch, title, link, batch_index)
+            batch_sent = await self.media_pipeline.send_batch_to_channel(
+                channel,
+                batch,
+                title=title,
+                link=link,
+                batch_index=batch_index,
+            )
+            sent_ok = sent_ok or batch_sent
 
         # 전송 성공한 배치를 공유 웹 갤러리에 적재
         # (fallback 경로는 _send_fallback 내부에서 개별 적재)
         if sent_ok and gallery_snapshot:
             for i, (data, filename) in enumerate(gallery_snapshot):
-                self._save_to_web_gallery(data, filename, batch_index + i, title, link)
+                self.media_pipeline.attach_to_web_gallery(
+                    data,
+                    filename,
+                    batch_index + i,
+                    title,
+                    link,
+                )
 
         # 배치 간 딜레이 (rate limit 방지)
         if batch_index > 0:
@@ -234,19 +221,7 @@ class ArcaBot(discord.Client):
 
         첫 번째 이미지에는 원본 제목, 이후 이미지에는 '제목 - N' 형식으로 표시한다.
         """
-        if not self.web_gallery_enabled or not data:
-            return
-        try:
-            from web_app import save_bytes_to_gallery
-            save_bytes_to_gallery(
-                data,
-                filename,
-                title=title if global_idx == 0 else f"{title} - {global_idx + 1}",
-                link=link if global_idx == 0 else "",
-                gallery=self.web_gallery_name,
-            )
-        except (OSError, ValueError) as e:
-            logger.warning(f"[아카라이브] 웹 갤러리 적재 실패 ({filename}): {e}")
+        self.media_pipeline.attach_to_web_gallery(data, filename, global_idx, title, link)
 
     async def _send_fallback(self, channel, batch: list[dict], title: str,
                               link: str, batch_index: int):

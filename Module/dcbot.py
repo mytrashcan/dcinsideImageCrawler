@@ -7,6 +7,7 @@ import discord
 from Module.crawler import DCInsideCrawler
 from Module.image_handler import ImageHandler
 from Module.message_sender import MessageSender
+from Module.media_pipeline import MediaPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,12 @@ class DCBot(discord.Client):
         self.crawler = DCInsideCrawler(base_url)
         self.image_handler = ImageHandler()
         self.message_sender = MessageSender(telegram_token, telegram_chat_id, image_handler=self.image_handler)
+        self.media_pipeline = MediaPipeline(
+            self.message_sender,
+            self,
+            self.channel_ids,
+            image_handler=self.image_handler,
+        )
 
     async def on_ready(self):
         logger.info(f"Logged in as {self.user}")
@@ -49,22 +56,22 @@ class DCBot(discord.Client):
         if not images:
             return
 
-        for i, (discord_buffer, telegram_buffer, filename, is_gif) in enumerate(images):
-            title = post['title'] if i == 0 else ""
-            # 제목이 있는 첫 이미지에만 게시글 하이퍼링크를 건다 (제목 없는 임베드엔 링크가 표시되지 않음)
-            link = post['link'] if i == 0 else None
+        media_items = [
+            {
+                "discord_buffer": discord_buffer,
+                "telegram_buffer": telegram_buffer,
+                "filename": filename,
+                "is_gif": is_gif,
+            }
+            for discord_buffer, telegram_buffer, filename, is_gif in images
+        ]
 
-            for channel_id in self.channel_ids:
-                channel = self.get_channel(int(channel_id))
-                if channel:
-                    await self.message_sender.send_to_discord(
-                        channel, title, discord_buffer, filename, link
-                    )
-
-            await self.message_sender.send_to_telegram(telegram_buffer, filename, is_gif)
-
-            if len(images) > 1:
-                await asyncio.sleep(1)
+        await self.media_pipeline.distribute(
+            media_items,
+            title=post['title'],
+            link=post['link'],
+            inter_image_delay=1.0,
+        )
 
     async def on_message(self, message):
         if message.author == self.user:
