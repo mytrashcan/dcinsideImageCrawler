@@ -94,14 +94,10 @@ class TestDiscord413Fallback:
 
 
 class TestConfigDiscordMaxSize:
-    def test_default_is_10mb(self, monkeypatch):
-        import importlib
+    def test_default_is_10mb(self):
+        from Module.config import DISCORD_MAX_SIZE
 
-        from Module import config
-
-        monkeypatch.delenv("DISCORD_MAX_SIZE_MB", raising=False)
-        importlib.reload(config)
-        assert config.DISCORD_MAX_SIZE == 10 * 1024 * 1024
+        assert DISCORD_MAX_SIZE == 10 * 1024 * 1024
 
     def test_env_override(self, monkeypatch):
         import importlib
@@ -110,8 +106,9 @@ class TestConfigDiscordMaxSize:
 
         monkeypatch.setenv("DISCORD_MAX_SIZE_MB", "50")
         importlib.reload(config)
-        assert config.DISCORD_MAX_SIZE == 50 * 1024 * 1024
-
-        # 다른 테스트에 영향 없도록 기본값으로 복원
-        monkeypatch.delenv("DISCORD_MAX_SIZE_MB", raising=False)
-        importlib.reload(config)
+        try:
+            assert config.DISCORD_MAX_SIZE == 50 * 1024 * 1024
+        finally:
+            # 다른 테스트에 영향 없도록 env 복원 후 재로드
+            monkeypatch.delenv("DISCORD_MAX_SIZE_MB", raising=False)
+            importlib.reload(config)
