@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 import random
@@ -6,6 +8,7 @@ import discord
 
 from Module.crawler import DCInsideCrawler
 from Module.image_handler import ImageHandler
+from Module.media_pipeline import MediaPipeline
 from Module.message_sender import MessageSender
 
 logger = logging.getLogger(__name__)
@@ -15,7 +18,7 @@ CLEAR_CACHE_COMMAND = "!쓰담쓰담"
 
 
 class DCBot(discord.Client):
-    def __init__(self, token, base_url, channel_ids, telegram_token, telegram_chat_id, intents):
+    def __init__(self, token: object, base_url: object, channel_ids: object, telegram_token: object, telegram_chat_id: object, intents: object) -> None:
         super().__init__(intents=intents)
         self.token = token
         self.base_url = base_url
@@ -23,12 +26,18 @@ class DCBot(discord.Client):
         self.crawler = DCInsideCrawler(base_url)
         self.image_handler = ImageHandler()
         self.message_sender = MessageSender(telegram_token, telegram_chat_id, image_handler=self.image_handler)
+        self.media_pipeline = MediaPipeline(
+            self.message_sender,
+            self,
+            self.channel_ids,
+            image_handler=self.image_handler,
+        )
 
-    async def on_ready(self):
+    async def on_ready(self) -> object:
         logger.info(f"Logged in as {self.user}")
         await self.start_crawling()
 
-    async def start_crawling(self):
+    async def start_crawling(self) -> object:
         while True:
             try:
                 # 동기 크롤러를 별도 스레드에서 실행하여 이벤트 루프 블로킹 방지
@@ -43,30 +52,30 @@ class DCBot(discord.Client):
             delay = random.uniform(20, 40)
             await asyncio.sleep(delay)
 
-    async def process_post(self, post):
+    async def process_post(self, post: object) -> object:
         # blocking I/O를 별도 스레드에서 실행
         images = await asyncio.to_thread(self.image_handler.download_images, post['link'])
         if not images:
             return
 
-        for i, (discord_buffer, telegram_buffer, filename, is_gif) in enumerate(images):
-            title = post['title'] if i == 0 else ""
-            # 제목이 있는 첫 이미지에만 게시글 하이퍼링크를 건다 (제목 없는 임베드엔 링크가 표시되지 않음)
-            link = post['link'] if i == 0 else None
+        media_items = [
+            {
+                "discord_buffer": discord_buffer,
+                "telegram_buffer": telegram_buffer,
+                "filename": filename,
+                "is_gif": is_gif,
+            }
+            for discord_buffer, telegram_buffer, filename, is_gif in images
+        ]
 
-            for channel_id in self.channel_ids:
-                channel = self.get_channel(int(channel_id))
-                if channel:
-                    await self.message_sender.send_to_discord(
-                        channel, title, discord_buffer, filename, link
-                    )
+        await self.media_pipeline.distribute(
+            media_items,
+            title=post['title'],
+            link=post['link'],
+            inter_image_delay=1.0,
+        )
 
-            await self.message_sender.send_to_telegram(telegram_buffer, filename, is_gif)
-
-            if len(images) > 1:
-                await asyncio.sleep(1)
-
-    async def on_message(self, message):
+    async def on_message(self, message: object) -> object:
         if message.author == self.user:
             return
 
@@ -82,6 +91,6 @@ class DCBot(discord.Client):
             embed.set_image(url="attachment://gaki.png")
             await message.channel.send(embed=embed, file=file)
 
-    async def run_bot(self):
+    async def run_bot(self) -> object:
         async with self:
             await self.start(self.token)

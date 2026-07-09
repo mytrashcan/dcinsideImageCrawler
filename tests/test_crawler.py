@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from unittest.mock import MagicMock
 
 import pytest
@@ -5,7 +7,7 @@ import pytest
 from Module.crawler import BoundedSet, DCInsideCrawler
 
 
-def make_post_row(title, post_id, has_image=False):
+def make_post_row(title: object, post_id: object, has_image: object=False) -> object:
     icon = '<em class="icon_img icon_pic"></em>' if has_image else ""
     return f"""
     <tr class="ub-content us-post">
@@ -16,11 +18,11 @@ def make_post_row(title, post_id, has_image=False):
     """
 
 
-def make_list_html(rows):
+def make_list_html(rows: object) -> object:
     return f"<html><body><table><tbody>{''.join(rows)}</tbody></table></body></html>"
 
 
-def make_crawler(html):
+def make_crawler(html: object) -> object:
     crawler = DCInsideCrawler("https://gall.dcinside.com/mgallery/board/lists/?id=test")
     response = MagicMock()
     response.text = html
@@ -31,13 +33,13 @@ def make_crawler(html):
 
 
 class TestBoundedSet:
-    def test_add_and_contains(self):
+    def test_add_and_contains(self) -> None:
         s = BoundedSet(maxsize=3)
         s.add("a")
         assert "a" in s
         assert "b" not in s
 
-    def test_evicts_oldest_when_full(self):
+    def test_evicts_oldest_when_full(self) -> None:
         s = BoundedSet(maxsize=2)
         s.add("a")
         s.add("b")
@@ -46,7 +48,7 @@ class TestBoundedSet:
         assert "b" in s
         assert "c" in s
 
-    def test_readd_moves_to_end(self):
+    def test_readd_moves_to_end(self) -> None:
         s = BoundedSet(maxsize=2)
         s.add("a")
         s.add("b")
@@ -55,7 +57,7 @@ class TestBoundedSet:
         assert "a" in s
         assert "b" not in s
 
-    def test_clear(self):
+    def test_clear(self) -> None:
         s = BoundedSet(maxsize=2)
         s.add("a")
         s.clear()
@@ -63,7 +65,7 @@ class TestBoundedSet:
 
 
 class TestGetLatestPost:
-    def test_skips_first_20_rows(self):
+    def test_skips_first_20_rows(self) -> None:
         # 앞 20개는 건너뛰므로 21번째 행이 반환되어야 함
         rows = [make_post_row(f"post{i}", i, has_image=True) for i in range(25)]
         crawler = make_crawler(make_list_html(rows))
@@ -75,7 +77,7 @@ class TestGetLatestPost:
         assert post["link"].endswith("no=20")
         assert post["has_image"] is True
 
-    def test_detects_post_without_image(self):
+    def test_detects_post_without_image(self) -> None:
         rows = [make_post_row(f"post{i}", i, has_image=False) for i in range(25)]
         crawler = make_crawler(make_list_html(rows))
 
@@ -84,7 +86,7 @@ class TestGetLatestPost:
         assert post is not None
         assert post["has_image"] is False
 
-    def test_does_not_return_same_post_twice(self):
+    def test_does_not_return_same_post_twice(self) -> None:
         rows = [make_post_row(f"post{i}", i, has_image=True) for i in range(25)]
         crawler = make_crawler(make_list_html(rows))
 
@@ -94,11 +96,11 @@ class TestGetLatestPost:
         assert first["title"] == "post20"
         assert second is None or second["title"] != first["title"]
 
-    def test_returns_none_when_no_posts(self):
+    def test_returns_none_when_no_posts(self) -> None:
         crawler = make_crawler("<html><body></body></html>")
         assert crawler.get_latest_post() is None
 
-    def test_returns_none_on_request_error(self):
+    def test_returns_none_on_request_error(self) -> None:
         import requests
 
         crawler = make_crawler("")
@@ -107,7 +109,7 @@ class TestGetLatestPost:
 
 
 @pytest.mark.parametrize("has_image", [True, False])
-def test_image_check(has_image):
+def test_image_check(has_image: object) -> None:
     from bs4 import BeautifulSoup
 
     html = make_post_row("t", 1, has_image=has_image)

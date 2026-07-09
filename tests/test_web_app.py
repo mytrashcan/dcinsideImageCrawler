@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import time
 
@@ -15,7 +17,7 @@ PNG_BYTES = (
 )
 
 
-def make_client(monkeypatch, tmp_path, ttl_seconds=3600):
+def make_client(monkeypatch: object, tmp_path: object, ttl_seconds: object=3600) -> object:
     monkeypatch.setenv("WEB_STATIC_DIR", str(tmp_path / "web_static"))
     monkeypatch.setenv("TURNSTILE_SECRET", "")
     # AppConfig is loaded once at import time, but test_message_sender.py's
@@ -29,7 +31,7 @@ def make_client(monkeypatch, tmp_path, ttl_seconds=3600):
     return TestClient(create_app())
 
 
-def test_direct_image_url_expires_even_without_feed_poll(monkeypatch, tmp_path):
+def test_direct_image_url_expires_even_without_feed_poll(monkeypatch: object, tmp_path: object) -> None:
     client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
     item = save_bytes_to_gallery(PNG_BYTES, "sample-expired.png", "title", "https://example.com")
 
@@ -47,7 +49,7 @@ def test_direct_image_url_expires_even_without_feed_poll(monkeypatch, tmp_path):
     assert not sidecar.exists()
 
 
-def test_direct_image_url_cache_lifetime_is_capped_by_remaining_ttl(monkeypatch, tmp_path):
+def test_direct_image_url_cache_lifetime_is_capped_by_remaining_ttl(monkeypatch: object, tmp_path: object) -> None:
     client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
     item = save_bytes_to_gallery(PNG_BYTES, "sample-fresh.png", "title", "https://example.com")
 
@@ -63,7 +65,7 @@ def test_direct_image_url_cache_lifetime_is_capped_by_remaining_ttl(monkeypatch,
     assert 0 < max_age <= 3600
 
 
-def test_direct_image_url_cache_lifetime_shrinks_as_image_ages(monkeypatch, tmp_path):
+def test_direct_image_url_cache_lifetime_shrinks_as_image_ages(monkeypatch: object, tmp_path: object) -> None:
     client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
     item = save_bytes_to_gallery(PNG_BYTES, "sample-aged.png", "title", "https://example.com")
 
@@ -79,7 +81,7 @@ def test_direct_image_url_cache_lifetime_shrinks_as_image_ages(monkeypatch, tmp_
     assert max_age <= 600
 
 
-def _big_jpeg(width=1200, height=800) -> bytes:
+def _big_jpeg(width: object=1200, height: object=800) -> bytes:
     import io
 
     from PIL import Image
@@ -89,7 +91,7 @@ def _big_jpeg(width=1200, height=800) -> bytes:
     return buf.getvalue()
 
 
-def test_large_image_gets_thumbnail_and_feed_prefers_it(monkeypatch, tmp_path):
+def test_large_image_gets_thumbnail_and_feed_prefers_it(monkeypatch: object, tmp_path: object) -> None:
     client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
     item = save_bytes_to_gallery(_big_jpeg(), "big.jpg", "title", "https://example.com")
 
@@ -110,7 +112,7 @@ def test_large_image_gets_thumbnail_and_feed_prefers_it(monkeypatch, tmp_path):
     assert 0 < max_age <= 3600
 
 
-def test_small_image_skips_thumbnail_and_falls_back_to_original(monkeypatch, tmp_path):
+def test_small_image_skips_thumbnail_and_falls_back_to_original(monkeypatch: object, tmp_path: object) -> None:
     client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
     item = save_bytes_to_gallery(PNG_BYTES, "tiny.png", "title", "")
 
@@ -120,7 +122,7 @@ def test_small_image_skips_thumbnail_and_falls_back_to_original(monkeypatch, tmp
     assert feed[0]["thumb"] == item["url"]
 
 
-def test_expired_image_deletes_thumbnail_too(monkeypatch, tmp_path):
+def test_expired_image_deletes_thumbnail_too(monkeypatch: object, tmp_path: object) -> None:
     client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
     item = save_bytes_to_gallery(_big_jpeg(), "big-expired.jpg", "title", "")
 
@@ -137,7 +139,7 @@ def test_expired_image_deletes_thumbnail_too(monkeypatch, tmp_path):
     assert not (tmp_path / "web_static" / "images" / item["id"]).exists()
 
 
-def test_feed_exposes_image_dimensions(monkeypatch, tmp_path):
+def test_feed_exposes_image_dimensions(monkeypatch: object, tmp_path: object) -> None:
     client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
     save_bytes_to_gallery(_big_jpeg(1200, 800), "dim.jpg", "title", "")
 
@@ -147,7 +149,7 @@ def test_feed_exposes_image_dimensions(monkeypatch, tmp_path):
     assert feed[0]["h"] == 800
 
 
-def test_feed_exposes_source_gallery(monkeypatch, tmp_path):
+def test_feed_exposes_source_gallery(monkeypatch: object, tmp_path: object) -> None:
     client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
     save_bytes_to_gallery(PNG_BYTES, "g.png", "title", "", gallery="stariload")
 
@@ -156,7 +158,7 @@ def test_feed_exposes_source_gallery(monkeypatch, tmp_path):
     assert feed[0]["gallery"] == "stariload"
 
 
-def test_discovery_endpoints_are_served(monkeypatch, tmp_path):
+def test_discovery_endpoints_are_served(monkeypatch: object, tmp_path: object) -> None:
     import shutil
 
     client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
@@ -177,7 +179,7 @@ def test_discovery_endpoints_are_served(monkeypatch, tmp_path):
     assert "Contact: mailto:" in sec.text and "Expires:" in sec.text
 
 
-def test_pwa_manifest_is_served(monkeypatch, tmp_path):
+def test_pwa_manifest_is_served(monkeypatch: object, tmp_path: object) -> None:
     import shutil
 
     client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
@@ -191,7 +193,7 @@ def test_pwa_manifest_is_served(monkeypatch, tmp_path):
     assert any(i["sizes"] == "512x512" for i in m["icons"])
 
 
-def test_like_same_ip_does_not_increment_twice(monkeypatch, tmp_path):
+def test_like_same_ip_does_not_increment_twice(monkeypatch: object, tmp_path: object) -> None:
     import web_app
     monkeypatch.setattr(web_app, "_like_ip_seen", web_app.LRUCache(100))
     monkeypatch.setattr(web_app, "_like_ip_rate", {})
@@ -206,7 +208,7 @@ def test_like_same_ip_does_not_increment_twice(monkeypatch, tmp_path):
     assert r2.json()["likes"] == 1
 
 
-def test_like_different_ip_can_still_increment(monkeypatch, tmp_path):
+def test_like_different_ip_can_still_increment(monkeypatch: object, tmp_path: object) -> None:
     import web_app
     monkeypatch.setattr(web_app, "_like_ip_seen", web_app.LRUCache(100))
     monkeypatch.setattr(web_app, "_like_ip_rate", {})
@@ -220,7 +222,7 @@ def test_like_different_ip_can_still_increment(monkeypatch, tmp_path):
     assert r2.json()["likes"] == 2
 
 
-def test_like_rate_limit_returns_429_past_threshold(monkeypatch, tmp_path):
+def test_like_rate_limit_returns_429_past_threshold(monkeypatch: object, tmp_path: object) -> None:
     import web_app
     monkeypatch.setattr(web_app, "_like_ip_seen", web_app.LRUCache(100))
     monkeypatch.setattr(web_app, "_like_ip_rate", {})
@@ -235,13 +237,13 @@ def test_like_rate_limit_returns_429_past_threshold(monkeypatch, tmp_path):
     assert 429 in statuses[3:]
 
 
-def test_api_docs_are_disabled(monkeypatch, tmp_path):
+def test_api_docs_are_disabled(monkeypatch: object, tmp_path: object) -> None:
     client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
     for path in ("/docs", "/redoc", "/openapi.json"):
         assert client.get(path).status_code == 404
 
 
-def test_security_headers_present_on_every_response(monkeypatch, tmp_path):
+def test_security_headers_present_on_every_response(monkeypatch: object, tmp_path: object) -> None:
     client = make_client(monkeypatch, tmp_path, ttl_seconds=3600)
     r = client.get("/feed")
     assert r.headers["x-content-type-options"] == "nosniff"
@@ -250,7 +252,7 @@ def test_security_headers_present_on_every_response(monkeypatch, tmp_path):
     assert "max-age=" in r.headers["strict-transport-security"]
 
 
-def test_feed_rate_limit_returns_429_past_threshold(monkeypatch, tmp_path):
+def test_feed_rate_limit_returns_429_past_threshold(monkeypatch: object, tmp_path: object) -> None:
     import web_app
     monkeypatch.setattr(web_app, "_feed_ip_rate", {})
     monkeypatch.setattr(web_app, "_FEED_RATE_MAX", 3)

@@ -7,6 +7,8 @@ DCInsideImageCrawler의 dcbot.py와 차이점:
 - 멀티 임베드 메시지 (한 게시글 여러 이미지를 하나의 메시지로)
 - 모든 이미지 처리는 인메모리(BytesIO)로 수행되며, WEB_GALLERY=1 일 때만 공유 웹 갤러리용으로 디스크에 기록됨
 """
+from __future__ import annotations
+
 import asyncio
 import hashlib
 import logging
@@ -19,6 +21,7 @@ from Module.arca_crawler import ArcaliveCrawler
 from Module.config import app_config
 from Module.embeds import make_image_embed
 from Module.image_handler import ImageHandler
+from Module.media_pipeline import MediaPipeline
 from Module.message_sender import MessageSender
 
 logger = logging.getLogger(__name__)
@@ -42,7 +45,7 @@ class ArcaBot(discord.Client):
     게시글 내 모든 이미지를 추출하여 전송한다.
     """
 
-    def __init__(self, token, base_url, channel_ids, intents, gallery_name=""):
+    def __init__(self, token: object, base_url: object, channel_ids: object, intents: object, gallery_name: object="") -> None:
         super().__init__(intents=intents)
         self.token = token
         self.base_url = base_url
@@ -57,12 +60,22 @@ class ArcaBot(discord.Client):
             telegram_chat_id=None,
             image_handler=self.image_handler,
         )
+        self.media_pipeline = MediaPipeline(
+            self.message_sender,
+            self,
+            self.channel_ids,
+            image_handler=self.image_handler,
+            web_gallery_enabled=self.web_gallery_enabled,
+            web_gallery_name=self.web_gallery_name,
+            discord_embed_color=ARCA_EMBED_COLOR,
+            telegram_enabled=False,
+        )
 
-    async def on_ready(self):
+    async def on_ready(self) -> object:
         logger.info(f"[아카라이브] Logged in as {self.user}")
         await self.start_crawling()
 
-    async def start_crawling(self):
+    async def start_crawling(self) -> object:
         """주기적으로 새 게시글을 폴링한다."""
         while True:
             try:
@@ -79,7 +92,7 @@ class ArcaBot(discord.Client):
             delay = random.uniform(30, 60)
             await asyncio.sleep(delay)
 
-    async def process_post(self, post):
+    async def process_post(self, post: object) -> object:
         """게시글 내 모든 이미지를 추출하여 디스코드로 전송한다."""
         images = await asyncio.to_thread(
             self.crawler.extract_all_images, post["link"]
@@ -107,7 +120,9 @@ class ArcaBot(discord.Client):
             batch = downloaded[batch_start : batch_start + MAX_EMBEDS_PER_MSG]
             await self._send_image_batch(batch, title, link, batch_start)
 
-    async def _download_and_process(self, images: list[dict], link: str) -> list[dict]:
+    async def _download_and_process(
+        self, images: list[dict[str, object]], link: str
+    ) -> list[dict[str, object]]:
         """이미지 URL 목록을 다운로드→압축→중복제거하여 전송 가능한 버퍼 목록으로 만든다."""
         downloaded = []
         for img_info in images:
@@ -157,8 +172,8 @@ class ArcaBot(discord.Client):
             logger.warning(f"이미지 다운로드 실패 ({img_url}): {e}")
             return None
 
-    async def _send_image_batch(self, batch: list[dict], title: str,
-                                link: str, batch_index: int):
+    async def _send_image_batch(self, batch: list[dict[str, object]], title: str,
+                                link: str, batch_index: int) -> object:
         """한 배치의 이미지를 Discord embed로 전송한다.
 
         - 첫 번째 embed: title + link 포함
@@ -179,77 +194,41 @@ class ArcaBot(discord.Client):
                 logger.warning(f"[아카라이브] 채널 없음: {channel_id}")
                 continue
 
-            # 각 채널 전송 전에 버퍼 위치 리셋 (이전 채널 전송으로 소비되었을 수 있음)
-            for item in batch:
-                item["discord_buffer"].seek(0)
-
-            files = []
-            embeds = []
-
-            for i, item in enumerate(batch):
-                buffer = item["discord_buffer"]
-                filename = item["filename"]
-                global_idx = batch_index + i
-
-                # Discord.File 생성
-                discord_file = discord.File(buffer, filename=filename)
-                files.append(discord_file)
-
-                # 첫 번째 이미지에만 title+link+footer, 나머지는 제목 없음
-                if global_idx == 0:
-                    embed = make_image_embed(
-                        filename, title=title, url=link, color=ARCA_EMBED_COLOR,
-                        footer=f"아카라이브 · {len(batch)}개 이미지",
-                    )
-                else:
-                    embed = make_image_embed(filename, color=ARCA_EMBED_COLOR)
-                embeds.append(embed)
-
-            try:
-                await channel.send(files=files, embeds=embeds)
-                sent_ok = True
-                logger.info(
-                    f"[아카라이브] 배치 전송 완료: {title} "
-                    f"({batch_index + 1}~{batch_index + len(batch)}/{len(batch)})"
-                )
-            except discord.HTTPException as e:
-                logger.error(f"[아카라이브] Discord 전송 실패: {e.status} {e.text}")
-                # 413(파일 크기)이면 한 장씩 fallback 전송
-                if e.status == 413:
-                    await self._send_fallback(channel, batch, title, link, batch_index)
+            batch_sent = await self.media_pipeline.send_batch_to_channel(
+                channel,
+                batch,
+                title=title,
+                link=link,
+                batch_index=batch_index,
+            )
+            sent_ok = sent_ok or batch_sent
 
         # 전송 성공한 배치를 공유 웹 갤러리에 적재
         # (fallback 경로는 _send_fallback 내부에서 개별 적재)
         if sent_ok and gallery_snapshot:
             for i, (data, filename) in enumerate(gallery_snapshot):
-                self._save_to_web_gallery(data, filename, batch_index + i, title, link)
+                self.media_pipeline.attach_to_web_gallery(
+                    data,
+                    filename,
+                    batch_index + i,
+                    title,
+                    link,
+                )
 
         # 배치 간 딜레이 (rate limit 방지)
         if batch_index > 0:
             await asyncio.sleep(INTER_IMAGE_DELAY)
 
     def _save_to_web_gallery(self, data: bytes, filename: str,
-                             global_idx: int, title: str, link: str):
+                             global_idx: int, title: str, link: str) -> object:
         """WEB_GALLERY=1 이면 전송된 이미지를 공유 웹 갤러리에 적재한다.
 
         첫 번째 이미지에는 원본 제목, 이후 이미지에는 '제목 - N' 형식으로 표시한다.
         """
-        if not self.web_gallery_enabled or not data:
-            return
-        try:
-            from web_app import save_bytes_to_gallery
-            save_bytes_to_gallery(
-                data,
-                filename,
-                title=title if global_idx == 0 else f"{title} - {global_idx + 1}",
-                link=link if global_idx == 0 else "",
-                gallery=self.web_gallery_name,
-            )
-        except (OSError, ValueError) as e:
-            logger.warning(f"[아카라이브] 웹 갤러리 적재 실패 ({filename}): {e}")
+        self.media_pipeline.attach_to_web_gallery(data, filename, global_idx, title, link)
 
-    async def _send_fallback(self, channel, batch: list[dict], title: str,
-                              link: str, batch_index: int):
+    async def _send_fallback(self, channel: object, batch: list[dict[str, object]], title: str,
+                              link: str, batch_index: int) -> object:
         """413(파일 크기 초과) 발생 시 한 장씩 개별 전송 (재압축 포함)."""
         for i, item in enumerate(batch):
             global_idx = batch_index + i
@@ -292,6 +271,6 @@ class ArcaBot(discord.Client):
 
             await asyncio.sleep(0.5)
 
-    async def run_bot(self):
+    async def run_bot(self) -> object:
         async with self:
             await self.start(self.token)
