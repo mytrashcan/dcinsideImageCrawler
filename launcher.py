@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 from collections import deque
+from urllib import error, request
 
 import psutil
 from dotenv import load_dotenv
@@ -41,6 +42,37 @@ MAX_ARCA = 5
 MAX_PROCESS_LIFETIME = 3600
 
 shutdown_requested = False
+
+
+def wait_for_web_gallery() -> bool:
+    """Wait until the in-memory web process can accept crawler uploads."""
+    if os.getenv("WEB_GALLERY") != "1":
+        return True
+
+    base_url = os.getenv("WEB_GALLERY_URL", "http://127.0.0.1:8000").rstrip("/")
+    try:
+        timeout_seconds = max(1, int(os.getenv("WEB_READY_TIMEOUT_SECONDS", "60")))
+    except ValueError:
+        timeout_seconds = 60
+        logger.warning("WEB_READY_TIMEOUT_SECONDS 값이 올바르지 않아 60초를 사용합니다.")
+
+    health_url = f"{base_url}/healthz"
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        try:
+            with request.urlopen(health_url, timeout=2) as response:
+                health = json.load(response)
+            if health.get("ingest_configured") is True:
+                logger.info("웹 갤러리 준비 완료: %s", health_url)
+                return True
+            logger.warning("웹 갤러리 ingest가 아직 준비되지 않았습니다: %s", health_url)
+        except (OSError, ValueError, error.URLError) as exc:
+            logger.info("웹 갤러리 준비 대기 중 (%s): %s", health_url, exc)
+
+        if time.monotonic() >= deadline:
+            logger.error("웹 갤러리가 %s초 안에 준비되지 않았습니다: %s", timeout_seconds, health_url)
+            return False
+        time.sleep(1)
 
 def signal_handler(sig: object, frame: object) -> object:
     global shutdown_requested
@@ -131,6 +163,8 @@ def manage_crawlers() -> object:
 def main() -> object:
     """메인 실행 함수"""
     logger.info("크롤러 관리 프로세스를 시작합니다.")
+    if not wait_for_web_gallery():
+        raise SystemExit("웹 갤러리 준비 실패")
     try:
         manage_crawlers()
     finally:

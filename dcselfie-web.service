@@ -1,6 +1,7 @@
 [Unit]
 Description=dcselfie web gallery
 After=network-online.target
+Before=dcselfie-launcher.service
 Wants=network-online.target
 
 [Service]
