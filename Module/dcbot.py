@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 import random
@@ -15,7 +17,7 @@ CLEAR_CACHE_COMMAND = "!쓰담쓰담"
 
 
 class DCBot(discord.Client):
-    def __init__(self, token, base_url, channel_ids, telegram_token, telegram_chat_id, intents):
+    def __init__(self, token: object, base_url: object, channel_ids: object, telegram_token: object, telegram_chat_id: object, intents: object) -> None:
         super().__init__(intents=intents)
         self.token = token
         self.base_url = base_url
@@ -24,11 +26,11 @@ class DCBot(discord.Client):
         self.image_handler = ImageHandler()
         self.message_sender = MessageSender(telegram_token, telegram_chat_id, image_handler=self.image_handler)
 
-    async def on_ready(self):
+    async def on_ready(self) -> object:
         logger.info(f"Logged in as {self.user}")
         await self.start_crawling()
 
-    async def start_crawling(self):
+    async def start_crawling(self) -> object:
         while True:
             try:
                 # 동기 크롤러를 별도 스레드에서 실행하여 이벤트 루프 블로킹 방지
@@ -43,7 +45,7 @@ class DCBot(discord.Client):
             delay = random.uniform(20, 40)
             await asyncio.sleep(delay)
 
-    async def process_post(self, post):
+    async def process_post(self, post: object) -> object:
         # blocking I/O를 별도 스레드에서 실행
         images = await asyncio.to_thread(self.image_handler.download_images, post['link'])
         if not images:
@@ -66,7 +68,7 @@ class DCBot(discord.Client):
             if len(images) > 1:
                 await asyncio.sleep(1)
 
-    async def on_message(self, message):
+    async def on_message(self, message: object) -> object:
         if message.author == self.user:
             return
 
@@ -82,6 +84,6 @@ class DCBot(discord.Client):
             embed.set_image(url="attachment://gaki.png")
             await message.channel.send(embed=embed, file=file)
 
-    async def run_bot(self):
+    async def run_bot(self) -> object:
         async with self:
             await self.start(self.token)

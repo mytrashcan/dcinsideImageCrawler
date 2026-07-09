@@ -3,58 +3,60 @@
 파싱 로직(목록/이미지 추출)을 HTML fixture + 세션 mock으로 고정한다.
 아카라이브 HTML 구조가 바뀌면 CI에서 즉시 감지된다.
 """
+from __future__ import annotations
+
 from bs4 import BeautifulSoup
 
 from Module.arca_crawler import ArcaliveCrawler, _create_session, _mask_proxy
 
 
 class FakeResponse:
-    def __init__(self, text):
+    def __init__(self, text: object) -> None:
         self.text = text
 
-    def raise_for_status(self):
+    def raise_for_status(self) -> object:
         pass
 
 
 class FakeSession:
     """crawler.session 을 대체 — 미리 준비한 HTML을 그대로 돌려준다."""
 
-    def __init__(self, html_by_url=None, default_html=""):
+    def __init__(self, html_by_url: object=None, default_html: object="") -> None:
         self.html_by_url = html_by_url or {}
         self.default_html = default_html
         self.requested = []
 
-    def get(self, url, **kwargs):
+    def get(self, url: object, **kwargs: object) -> object:
         self.requested.append(url)
         return FakeResponse(self.html_by_url.get(url, self.default_html))
 
 
-def make_crawler(session=None):
+def make_crawler(session: object=None) -> object:
     c = ArcaliveCrawler("https://arca.live/b/genshin")
     if session is not None:
         c.session = session
     return c
 
 
-def soup_one(html, selector):
+def soup_one(html: object, selector: object) -> object:
     return BeautifulSoup(html, "lxml").select_one(selector)
 
 
 # ---------- 순수 파싱 ----------
 
-def test_extract_post_id():
+def test_extract_post_id() -> None:
     assert ArcaliveCrawler._extract_post_id("/b/genshin/12345?p=2") == "12345"
     assert ArcaliveCrawler._extract_post_id("/b/genshin/") == ""
     assert ArcaliveCrawler._extract_post_id("garbage") == ""
 
 
-def test_mask_proxy_hides_credentials():
+def test_mask_proxy_hides_credentials() -> None:
     assert _mask_proxy("socks5://user:pass@p.webshare.io:1080") == "socks5://***:***@p.webshare.io:1080"
     # 자격증명 없는 URL은 그대로
     assert _mask_proxy("socks5h://p.proxy.net:9000") == "socks5h://p.proxy.net:9000"
 
 
-def test_parse_column_row():
+def test_parse_column_row() -> None:
     c = make_crawler(FakeSession())
     html = (
         '<a class="vrow column" href="/b/genshin/777?p=1">'
@@ -71,13 +73,13 @@ def test_parse_column_row():
     }
 
 
-def test_parse_column_row_without_image_returns_none():
+def test_parse_column_row_without_image_returns_none() -> None:
     c = make_crawler(FakeSession())
     html = '<a class="vrow column" href="/b/genshin/1"><span class="title">t</span></a>'
     assert c._parse_column_row(soup_one(html, "a.vrow.column")) is None
 
 
-def test_parse_hybrid_row():
+def test_parse_hybrid_row() -> None:
     c = make_crawler(FakeSession())
     html = (
         '<div class="vrow hybrid">'
@@ -92,7 +94,7 @@ def test_parse_hybrid_row():
 
 # ---------- 이미지 수집 ----------
 
-def _collect(img_html):
+def _collect(img_html: object) -> object:
     c = make_crawler(FakeSession())
     img = soup_one(img_html, "img")
     images, seen = [], set()
@@ -100,30 +102,30 @@ def _collect(img_html):
     return images
 
 
-def test_collect_namu_image():
+def test_collect_namu_image() -> None:
     images = _collect('<img src="//ac-p1.namu.la/2026/abc123.png">')
     assert len(images) == 1
     assert images[0]["url"] == "https://ac-p1.namu.la/2026/abc123.png"
     assert images[0]["filename"] == "abc123.png"
 
 
-def test_collect_prefers_original_url():
+def test_collect_prefers_original_url() -> None:
     images = _collect(
         '<img src="//ac-p1.namu.la/thumb/x.webp" data-originalurl="https://ac-o.namu.la/orig/x.png">'
     )
     assert images[0]["url"] == "https://ac-o.namu.la/orig/x.png"
 
 
-def test_collect_skips_emoticon():
+def test_collect_skips_emoticon() -> None:
     assert _collect('<img class="arca-emoticon" src="//ac-p1.namu.la/emo/e.png">') == []
     assert _collect('<img data-type="emoticon" src="//ac-p1.namu.la/emo/e.png">') == []
 
 
-def test_collect_skips_non_namu():
+def test_collect_skips_non_namu() -> None:
     assert _collect('<img src="//cdn.other.com/x.png">') == []
 
 
-def test_collect_dedup_by_clean_url():
+def test_collect_dedup_by_clean_url() -> None:
     c = make_crawler(FakeSession())
     images, seen = [], set()
     for _ in range(2):
@@ -132,7 +134,7 @@ def test_collect_dedup_by_clean_url():
     assert len(images) == 1
 
 
-def test_extract_all_images_from_article_body():
+def test_extract_all_images_from_article_body() -> None:
     post_url = "https://arca.live/b/genshin/500"
     html = (
         '<html><body><div class="article-body">'
@@ -148,7 +150,7 @@ def test_extract_all_images_from_article_body():
 
 # ---------- 목록 + dedup ----------
 
-def test_get_latest_posts_dedups_across_calls(monkeypatch):
+def test_get_latest_posts_dedups_across_calls(monkeypatch: object) -> None:
     monkeypatch.setattr("Module.arca_crawler.POST_SKIP_COUNT", 0)
     rows = "".join(
         f'<a class="vrow column" href="/b/genshin/{i}">'
@@ -165,7 +167,7 @@ def test_get_latest_posts_dedups_across_calls(monkeypatch):
     assert c.get_latest_posts(max_posts=10) == []
 
 
-def test_create_session_has_browser_headers(monkeypatch):
+def test_create_session_has_browser_headers(monkeypatch: object) -> None:
     monkeypatch.delenv("ARCA_SOCKS_PROXY", raising=False)
     s = _create_session()
     assert "Mozilla" in s.headers.get("User-Agent", "")

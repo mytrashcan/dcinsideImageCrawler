@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 
@@ -14,7 +16,7 @@ DISCORD_EMBED_COLOR = 0xFF5733
 
 
 class MessageSender:
-    def __init__(self, telegram_bot_token, telegram_chat_id, image_handler=None):
+    def __init__(self, telegram_bot_token: object, telegram_chat_id: object, image_handler: object=None) -> None:
         # 타임아웃 설정 증가 (기본 5초 -> 30초)
         request = HTTPXRequest(
             connect_timeout=30.0,
@@ -26,7 +28,7 @@ class MessageSender:
         # 413(파일 크기 초과) 시 재압축 폴백에 사용 (없으면 폴백 비활성화)
         self.image_handler = image_handler
 
-    def validate_image_buffer(self, image_buffer):
+    def validate_image_buffer(self, image_buffer: object) -> object:
         """메모리 버퍼의 이미지 유효성 검증"""
         try:
             image_buffer.seek(0, 2)
@@ -55,7 +57,7 @@ class MessageSender:
             logger.error(f"이미지 검증 실패: {e}")
             return False
 
-    def recompress_for_discord(self, channel, image_buffer, filename):
+    def recompress_for_discord(self, channel: object, image_buffer: object, filename: object) -> object:
         """Re-compress image after 413 response using guild's actual limit."""
         image_buffer.seek(0)
         data = image_buffer.read()
@@ -81,7 +83,7 @@ class MessageSender:
         buffer.seek(0)
         return buffer
 
-    async def send_to_discord(self, channel, title, image_buffer, filename, url=None):
+    async def send_to_discord(self, channel: object, title: object, image_buffer: object, filename: object, url: object=None) -> object:
         """디스코드로 이미지 전송 (413 시 재압축 후 1회 재시도)
 
         url이 주어지면 임베드 제목이 해당 게시글로 가는 하이퍼링크가 된다.
@@ -130,7 +132,7 @@ class MessageSender:
             except (OSError, ValueError):
                 pass
 
-    async def send_to_telegram(self, image_buffer, filename=None, is_gif=False, max_retries=3):
+    async def send_to_telegram(self, image_buffer: object, filename: object=None, is_gif: object=False, max_retries: object=3) -> object:
         """텔레그램으로 이미지 전송 (GIF는 animation으로, 재시도 포함)"""
         if self.telegram_bot is None:
             logger.debug("Telegram 봇이 설정되지 않음 — 전송 건너뜀")

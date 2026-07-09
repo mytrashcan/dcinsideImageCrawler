@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import hashlib
 import io
 import logging
@@ -20,21 +22,21 @@ MAX_HASH_CACHE_SIZE = 1000
 
 
 class ImageHandler:
-    def __init__(self):
+    def __init__(self) -> None:
         self._seen_hashes = LRUCache(MAX_HASH_CACHE_SIZE)
         self.session = requests.Session()
         self.session.headers.update(HEADERS)
 
-    def is_duplicate(self, content_hash):
+    def is_duplicate(self, content_hash: object) -> object:
         """이미 처리한 이미지 해시인지 확인하고 기록한다. 이미 봤으면 True."""
         return self._seen_hashes.add_if_absent(content_hash)
 
-    def clear_seen_hashes(self):
+    def clear_seen_hashes(self) -> object:
         """중복 체크용 해시 캐시 초기화"""
         self._seen_hashes.clear()
         logger.info("이미지 해시 캐시가 초기화되었습니다.")
 
-    def compress_gif(self, image_data, target_size, filename):
+    def compress_gif(self, image_data: object, target_size: object, filename: object) -> object:
         """GIF 압축 (프레임 수 줄이기 + 크기 조절)"""
         try:
             original_size = len(image_data)
@@ -100,7 +102,7 @@ class ImageHandler:
             buffer = io.BytesIO(image_data)
             return buffer, len(image_data)
 
-    def compress_image(self, image_data, target_size, filename):
+    def compress_image(self, image_data: object, target_size: object, filename: object) -> object:
         """일반 이미지(JPG/PNG) 압축"""
         try:
             original_size = len(image_data)
@@ -145,7 +147,7 @@ class ImageHandler:
             buffer = io.BytesIO(image_data)
             return buffer, len(image_data)
 
-    def process_image(self, image_data, filename):
+    def process_image(self, image_data: object, filename: object) -> object:
         """이미지 처리 (필요시 압축) - Discord/Telegram용 두 버전 반환"""
         file_ext = filename.split('.')[-1].lower() if '.' in filename else ''
         is_gif = file_ext == 'gif' or image_data[:6] in (b'GIF87a', b'GIF89a')
@@ -190,7 +192,7 @@ class ImageHandler:
 
         return discord_buffer, telegram_buffer, is_gif
 
-    def download_images(self, url):
+    def download_images(self, url: object) -> object:
         """첫 번째 이미지만 메모리로 다운로드하여 리스트로 반환"""
         try:
             headers = {'Referer': url}

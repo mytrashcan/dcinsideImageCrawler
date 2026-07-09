@@ -1,4 +1,6 @@
 """Single gallery runner — routes to DCInside (DCBot) or Arcalive (ArcaBot) based on galleries.json type."""
+from __future__ import annotations
+
 import asyncio
 import json
 import os
@@ -10,7 +12,7 @@ from Module.arca_bot import ArcaBot
 from Module.dcbot import DCBot
 
 
-def load_gallery_config(gallery_name):
+def load_gallery_config(gallery_name: object) -> object:
     with open("galleries.json", encoding="utf-8") as f:
         galleries = json.load(f)
 
@@ -22,7 +24,7 @@ def load_gallery_config(gallery_name):
     return galleries[gallery_name]
 
 
-async def main(gallery_name):
+async def main(gallery_name: object) -> object:
     config = load_gallery_config(gallery_name)
     intents = get_discord_intents()
 
