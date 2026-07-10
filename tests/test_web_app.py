@@ -278,3 +278,145 @@ def test_security_headers_present(monkeypatch, tmp_path):
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["x-frame-options"] == "DENY"
     assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert "max-age=" in response.headers["strict-transport-security"]
+
+
+def animated_gif_bytes(size=(64, 64), frames=3) -> bytes:
+    colors = ("#ff0000", "#00ff00", "#0000ff")
+    images = [Image.new("RGB", size, colors[i % 3]) for i in range(frames)]
+    out = io.BytesIO()
+    images[0].save(out, format="GIF", save_all=True, append_images=images[1:], duration=100, loop=0)
+    return out.getvalue()
+
+
+def noisy_png_bytes(size=(128, 128)) -> bytes:
+    import os
+
+    image = Image.frombytes("RGB", size, os.urandom(size[0] * size[1] * 3))
+    out = io.BytesIO()
+    image.save(out, format="PNG")
+    return out.getvalue()
+
+
+def test_like_rate_limit_returns_429_past_threshold(monkeypatch, tmp_path):
+    monkeypatch.setattr(web_app, "_LIKE_RATE_MAX", 3)
+    client, _ = make_client(monkeypatch, tmp_path)
+    items = [
+        ingest(client, image_bytes(color=f"#0000{i:02x}"), f"rl{i}.png").json() for i in range(5)
+    ]
+
+    headers = {"cf-connecting-ip": "9.9.9.9"}
+    statuses = [client.post(f"/like/{it['id']}", headers=headers).status_code for it in items]
+
+    assert statuses[:3] == [200, 200, 200]
+    assert 429 in statuses[3:]
+
+
+def test_feed_rate_limit_returns_429_past_threshold(monkeypatch, tmp_path):
+    monkeypatch.setattr(web_app, "_FEED_RATE_MAX", 3)
+    client, _ = make_client(monkeypatch, tmp_path)
+
+    headers = {"cf-connecting-ip": "8.8.8.8"}
+    statuses = [client.get("/feed", headers=headers).status_code for _ in range(5)]
+
+    assert statuses[:3] == [200, 200, 200]
+    assert 429 in statuses[3:]
+
+
+def test_feed_exposes_image_dimensions(monkeypatch, tmp_path):
+    """프론트가 로드 전에 카드 높이를 예약할 수 있도록 원본 치수를 내려보낸다."""
+    client, _ = make_client(monkeypatch, tmp_path)
+    ingest(client, image_bytes((1200, 800), fmt="JPEG"), "dim.jpg")
+
+    feed = client.get("/feed").json()
+
+    assert feed[0]["w"] == 1200
+    assert feed[0]["h"] == 800
+
+
+def test_discovery_endpoints_are_served(monkeypatch, tmp_path):
+    import shutil
+
+    client, _ = make_client(monkeypatch, tmp_path)
+    static = tmp_path / "web_static"
+    for f in ("robots.txt", "sitemap.xml", "security.txt", "manifest.json"):
+        shutil.copy(f"web_static/{f}", static / f)
+
+    robots = client.get("/robots.txt")
+    assert robots.status_code == 200
+    assert "Sitemap: https://dcselfie.win/sitemap.xml" in robots.text
+    assert "Disallow: /internal/" in robots.text
+
+    sitemap = client.get("/sitemap.xml")
+    assert sitemap.status_code == 200
+    assert "<loc>https://dcselfie.win/</loc>" in sitemap.text
+
+    sec = client.get("/.well-known/security.txt")
+    assert sec.status_code == 200
+    assert "Contact: mailto:" in sec.text and "Expires:" in sec.text
+
+    manifest = client.get("/manifest.json")
+    assert manifest.status_code == 200
+    assert manifest.headers["content-type"].startswith("application/manifest+json")
+    assert manifest.json()["display"] == "standalone"
+
+
+def test_ingest_rejects_oversized_content_length_before_reading_body(monkeypatch, tmp_path):
+    monkeypatch.setattr(web_app.app_config, "web_ingest_max_mb", 0)
+    client, _ = make_client(monkeypatch, tmp_path)
+
+    assert ingest(client, image_bytes()).status_code == 413
+
+
+def test_ingest_rejects_oversized_streamed_body_without_content_length(monkeypatch, tmp_path):
+    """Content-Length를 속이거나 생략(chunked)해도 스트리밍 단계에서 잘려야 한다."""
+    monkeypatch.setattr(web_app.app_config, "web_ingest_max_mb", 0)
+    client, _ = make_client(monkeypatch, tmp_path)
+    data = image_bytes()
+
+    response = client.post(
+        "/internal/images",
+        content=iter([data[:100], data[100:]]),  # generator → chunked, CL 없음
+        headers={"X-Ingest-Token": "test-secret", "Content-Type": "application/octet-stream"},
+    )
+
+    assert response.status_code == 413
+
+
+def test_animated_gif_over_per_image_limit_returns_413(monkeypatch, tmp_path):
+    """애니메이션은 JPEG 재압축이 불가능하므로 상한 초과 시 명시적으로 거절한다."""
+    store = MemoryGalleryStore(
+        max_items=10, max_bytes=1024 * 1024, max_image_bytes=100,
+        ttl_seconds=3600, thumbnail_width=480,
+    )
+    client, _ = make_client(monkeypatch, tmp_path, store)
+
+    assert ingest(client, animated_gif_bytes(), "anim.gif").status_code == 413
+
+
+def test_animated_gif_under_limit_is_served_as_gif(monkeypatch, tmp_path):
+    client, _ = make_client(monkeypatch, tmp_path)
+
+    item = ingest(client, animated_gif_bytes(), "anim.gif").json()
+
+    assert item["url"].endswith(".gif")
+    assert item["thumb"] == item["url"]  # 애니메이션은 프레임 손실 방지를 위해 썸네일 생략
+    response = client.get(item["url"])
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/gif"
+
+
+def test_oversized_static_image_is_recompressed_to_jpeg(monkeypatch, tmp_path):
+    store = MemoryGalleryStore(
+        max_items=10, max_bytes=1024 * 1024, max_image_bytes=16 * 1024,
+        ttl_seconds=3600, thumbnail_width=480,
+    )
+    client, _ = make_client(monkeypatch, tmp_path, store)
+    png = noisy_png_bytes()  # 노이즈 PNG ≈ 50KB > 16KB 상한
+
+    item = ingest(client, png, "big.png").json()
+
+    assert item["url"].endswith(".jpg")
+    response = client.get(item["url"])
+    assert response.headers["content-type"] == "image/jpeg"
+    assert len(response.content) <= 16 * 1024
