@@ -204,6 +204,23 @@ def test_health_reports_memory_and_freshness(monkeypatch, tmp_path):
     assert health["fresh"] is False
 
 
+def test_health_empty_store_goes_stale_after_grace(monkeypatch, tmp_path):
+    """전부 만료돼 빈 스토어가 fresh=true로 돌아가 크롤러 전멸을 가리면 안 된다."""
+    now = [1000.0]
+    store = make_store(clock=lambda: now[0], ttl=60)
+    client, _ = make_client(monkeypatch, tmp_path, store)
+    monkeypatch.setattr(web_app.app_config, "web_freshness_seconds", 30)
+
+    assert client.get("/healthz").json()["fresh"] is True  # 기동 직후 그레이스
+
+    ingest(client, image_bytes())
+    now[0] += 61  # TTL 경과 → 스토어가 다시 빔
+
+    health = client.get("/healthz").json()
+    assert health["items"] == 0
+    assert health["fresh"] is False
+
+
 def test_startup_removes_legacy_disk_cache(monkeypatch, tmp_path):
     legacy = tmp_path / "web_static" / "images" / "thumbs"
     legacy.mkdir(parents=True)
