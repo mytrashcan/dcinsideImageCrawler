@@ -244,6 +244,32 @@ def test_feed_and_api_docs_policy(monkeypatch, tmp_path):
         assert client.get(path).status_code == 404
 
 
+def _access_record(path: str):
+    import logging
+
+    return logging.LogRecord(
+        "uvicorn.access", logging.INFO, __file__, 0,
+        '%s - "%s %s HTTP/%s" %d',
+        ("127.0.0.1:1", "POST", path, "1.1", 200), None,
+    )
+
+
+def test_internal_routes_are_excluded_from_access_log(monkeypatch, tmp_path):
+    """제목·링크가 쿼리스트링으로 오는 ingest 라인이 journald(디스크)에 남지 않아야 한다."""
+    import logging
+
+    make_client(monkeypatch, tmp_path)
+    make_client(monkeypatch, tmp_path)  # 재호출에도 필터는 1개만 (중복 설치 방지)
+
+    filters = [
+        f for f in logging.getLogger("uvicorn.access").filters
+        if isinstance(f, web_app._InternalRouteAccessFilter)
+    ]
+    assert len(filters) == 1
+    assert filters[0].filter(_access_record("/internal/images?title=제목&link=url")) is False
+    assert filters[0].filter(_access_record("/feed")) is True
+
+
 def test_security_headers_present(monkeypatch, tmp_path):
     client, _ = make_client(monkeypatch, tmp_path)
 

@@ -5,6 +5,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import logging
 import time
 import urllib.parse
 import urllib.request
@@ -159,10 +160,34 @@ def _maintenance_on() -> bool:
     return app_config.web_maintenance or _maintenance_file().exists()
 
 
+class _InternalRouteAccessFilter(logging.Filter):
+    """uvicorn 액세스 로그에서 /internal/* 요청 라인을 제거한다.
+
+    ingest 요청은 이미지 제목·원본 링크가 쿼리스트링에 실려 오는데, 액세스 로그로
+    journald(디스크)에 영구 기록되면 '이미지 관련 데이터를 디스크에 남기지 않는다'는
+    목표가 무색해진다. uvicorn AccessFormatter의 record.args는
+    (client_addr, method, full_path, http_version, status_code) 튜플이다."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        return not (
+            isinstance(args, tuple)
+            and len(args) >= 3
+            and str(args[2]).startswith("/internal/")
+        )
+
+
+def _install_access_log_privacy_filter() -> None:
+    access_logger = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, _InternalRouteAccessFilter) for f in access_logger.filters):
+        access_logger.addFilter(_InternalRouteAccessFilter())
+
+
 def create_app(store: MemoryGalleryStore | None = None) -> FastAPI:
     static_dir = _static_dir()
     static_dir.mkdir(parents=True, exist_ok=True)
     _purge_legacy_disk_cache()
+    _install_access_log_privacy_filter()
     gallery_store = store or _build_store()
     ingest_slots = asyncio.Semaphore(2)
     # 공개용 이미지 피드일 뿐 소비 대상 API가 아니므로 대화형 문서/스키마는 끈다
