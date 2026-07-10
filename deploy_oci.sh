@@ -16,16 +16,10 @@ flock -n 9 || { echo "Another deployment is running." >&2; exit 1; }
 git fetch origin main
 git pull --ff-only origin main
 
-umask 077
-touch .env
-if ! grep -q '^WEB_INGEST_TOKEN=' .env; then
-  token="$(openssl rand -hex 32)"
-  printf '\nWEB_INGEST_TOKEN=%s\n' "$token" >> .env
-  echo "Generated WEB_INGEST_TOKEN in .env"
-fi
-
 venv/bin/pip install -r requirements.txt
-venv/bin/python -m compileall -q Module web_app.py run_gallery.py run_web_server.py
+umask 077
+venv/bin/python scripts/ensure_web_ingest_token.py .env
+venv/bin/python -m compileall -q Module scripts web_app.py run_gallery.py run_web_server.py
 
 sudo install -m 0644 dcselfie-launcher.service dcselfie-web.service /etc/systemd/system/
 sudo systemctl daemon-reload
