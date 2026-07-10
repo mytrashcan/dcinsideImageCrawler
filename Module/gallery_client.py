@@ -13,6 +13,14 @@ from Module.config import app_config
 logger = logging.getLogger(__name__)
 
 
+def _safe_error_label(exc: Exception) -> str:
+    """Describe an upload failure without including its URL or response body."""
+    response = getattr(exc, "response", None)
+    if response is not None:
+        return f"{type(exc).__name__}(status={response.status_code})"
+    return type(exc).__name__
+
+
 class GalleryClient:
     def __init__(
         self,
@@ -60,15 +68,19 @@ class GalleryClient:
                 response.raise_for_status()
                 return response.json()
             except (requests.RequestException, ValueError) as exc:
+                error_label = _safe_error_label(exc)
                 if attempt == self.max_attempts:
-                    logger.warning("웹 갤러리 전송 실패 (%s): %s", filename, exc)
+                    logger.warning(
+                        "웹 갤러리 전송 실패 (attempts=%s, error=%s)",
+                        self.max_attempts,
+                        error_label,
+                    )
                     return {}
                 logger.warning(
-                    "웹 갤러리 전송 재시도 %s/%s (%s): %s",
+                    "웹 갤러리 전송 재시도 %s/%s (error=%s)",
                     attempt,
                     self.max_attempts,
-                    filename,
-                    exc,
+                    error_label,
                 )
                 time.sleep(self.retry_delay_seconds * attempt)
         return {}
