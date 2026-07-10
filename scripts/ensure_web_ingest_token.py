@@ -12,9 +12,13 @@ from dotenv import dotenv_values, set_key
 TOKEN_KEY = "WEB_INGEST_TOKEN"
 
 
+def generate_web_ingest_token() -> str:
+    return secrets.token_hex(32)
+
+
 def ensure_web_ingest_token(
     env_path: Path,
-    token_factory: Callable[[], str] = lambda: secrets.token_hex(32),
+    token_factory: Callable[[], str] = generate_web_ingest_token,
 ) -> bool:
     """Create or replace an empty ingest token; return whether the file changed."""
     env_path.touch(mode=0o600, exist_ok=True)
