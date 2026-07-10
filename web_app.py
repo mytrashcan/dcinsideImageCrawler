@@ -371,7 +371,12 @@ def create_app(store: MemoryGalleryStore | None = None) -> FastAPI:
     async def healthz() -> object:
         stats = gallery_store.stats()
         latest_age = stats["latest_age_seconds"]
-        fresh = latest_age is None or latest_age <= app_config.web_freshness_seconds
+        if latest_age is None:
+            # 빈 스토어는 기동 직후 그레이스 동안만 정상으로 본다. TTL로 전부 만료돼
+            # 비어 있는 것은 크롤러 전멸 신호인데, 무조건 fresh=true면 장애를 가린다.
+            fresh = stats["uptime_seconds"] <= app_config.web_freshness_seconds
+        else:
+            fresh = latest_age <= app_config.web_freshness_seconds
         return JSONResponse({
             "ok": True,
             **stats,
