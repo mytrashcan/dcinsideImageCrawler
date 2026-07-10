@@ -130,6 +130,8 @@ Thumbnails are generated into `BytesIO` and count toward the same memory budget.
 
 The production systemd unit disables core dumps and swap for the web process. Copies sent to Discord, Telegram, browsers, or other external systems remain outside this server's control.
 
+> ⚠️ **`LimitCORE=0` alone does not stop piped core collectors.** When `/proc/sys/kernel/core_pattern` pipes crashes to a collector (Ubuntu's `apport`, or `systemd-coredump`), the kernel ignores the `RLIMIT_CORE` size limit - so a native crash (e.g. in Pillow's decoders) could still dump the whole store's image bytes to disk under `/var/crash` or `/var/lib/systemd/coredump`. On the server, check `cat /proc/sys/kernel/core_pattern`; if it pipes to apport run `sudo systemctl mask apport.service`, and for systemd-coredump set `Storage=none` + `ProcessSizeMax=0` in `/etc/systemd/coredump.conf`.
+
 ### All galleries on one page (with the launcher)
 
 Run the launcher with `WEB_GALLERY=1` so every crawler also writes to the shared gallery, and start one web server alongside it:
