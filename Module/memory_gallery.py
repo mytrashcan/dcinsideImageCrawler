@@ -18,7 +18,10 @@ _FORMAT_INFO = {
     "GIF": (".gif", "image/gif"),
     "WEBP": (".webp", "image/webp"),
 }
-MAX_IMAGE_PIXELS = 25_000_000
+# 디코드 시 픽셀당 3~4바이트가 필요하고 압축/썸네일 과정에서 풀사이즈 사본이 한 번 더
+# 생기므로, 이 값이 web 프로세스의 순간 메모리 스파이크를 좌우한다 (12M픽셀 RGB ≈ 36MB,
+# 사본 포함 ~72MB/장 × 동시 2슬롯). 카드 피드 용도로는 12M(≈4000×3000)이면 충분하다.
+MAX_IMAGE_PIXELS = 12_000_000
 
 
 class InvalidImage(ValueError):

@@ -16,7 +16,9 @@ ExecStart=/home/ubuntu/dcinsideImageCrawler/venv/bin/python run_web_server.py
 Restart=on-failure
 RestartSec=5
 LimitCORE=0
-MemoryMax=512M
+# 스토어 상한(기본 256MB) + PIL 디코드 스파이크(대형 이미지 사본 포함 ~72MB × 동시 2슬롯)
+# + 인터프리터(~100MB)를 감안한 여유. 512M는 만충 상태에서 cgroup OOM(SIGKILL) 여지가 있었다.
+MemoryMax=768M
 MemorySwapMax=0
 UMask=0077
 
