@@ -44,6 +44,27 @@ MAX_PROCESS_LIFETIME = 3600
 shutdown_requested = False
 
 
+def _probe_ingest_auth(base_url: str) -> int | None:
+    """빈 바디 + 토큰으로 ingest 인증만 검사한다. 415면 토큰 일치(빈 바디라 이미지 검증에서
+    거절), 401이면 토큰 불일치. 연결 실패 등은 None."""
+    req = request.Request(
+        f"{base_url}/internal/images",
+        data=b"",
+        headers={
+            "X-Ingest-Token": os.getenv("WEB_INGEST_TOKEN", ""),
+            "Content-Type": "application/octet-stream",
+        },
+        method="POST",
+    )
+    try:
+        with request.urlopen(req, timeout=2) as response:
+            return response.status
+    except error.HTTPError as exc:
+        return exc.code
+    except (OSError, ValueError, error.URLError):
+        return None
+
+
 def wait_for_web_gallery() -> bool:
     """Wait until the in-memory web process can accept crawler uploads."""
     if os.getenv("WEB_GALLERY") != "1":
@@ -63,9 +84,22 @@ def wait_for_web_gallery() -> bool:
             with request.urlopen(health_url, timeout=2) as response:
                 health = json.load(response)
             if health.get("ingest_configured") is True:
-                logger.info("웹 갤러리 준비 완료: %s", health_url)
-                return True
-            logger.warning("웹 갤러리 ingest가 아직 준비되지 않았습니다: %s", health_url)
+                # healthz는 웹 쪽에 토큰이 "있다"는 것만 알려준다. 웹이 옛 .env로 기동 중이면
+                # (토큰 회전 후 web 미재시작 등) 크롤러 업로드가 전부 401로 조용히 버려지므로,
+                # 실제 토큰이 일치하는지까지 확인한 뒤에 크롤러를 시작한다.
+                status = _probe_ingest_auth(base_url)
+                if status in (200, 415):
+                    logger.info("웹 갤러리 준비 완료 (ingest 토큰 인증 확인): %s", health_url)
+                    return True
+                if status == 401:
+                    logger.error(
+                        "WEB_INGEST_TOKEN 불일치: 웹 프로세스가 다른 토큰으로 기동 중입니다. "
+                        "(.env 변경 후 dcselfie-web 미재시작이 흔한 원인 — web 재시작 필요)"
+                    )
+                else:
+                    logger.warning("ingest 인증 프로브 응답 대기 중 (status=%s)", status)
+            else:
+                logger.warning("웹 갤러리 ingest가 아직 준비되지 않았습니다: %s", health_url)
         except (OSError, ValueError, error.URLError) as exc:
             logger.info("웹 갤러리 준비 대기 중 (%s): %s", health_url, exc)
 

@@ -85,6 +85,17 @@ def test_ingest_rejects_invalid_image(monkeypatch, tmp_path):
     assert response.status_code == 415
 
 
+def test_ingest_empty_body_with_valid_token_returns_415_not_401(monkeypatch, tmp_path):
+    """launcher의 기동 프로브 계약: 빈 바디 + 올바른 토큰 = 415(인증 통과), 틀린 토큰 = 401."""
+    client, _ = make_client(monkeypatch, tmp_path)
+
+    assert ingest(client, b"").status_code == 415
+    wrong = client.post(
+        "/internal/images", content=b"", headers={"X-Ingest-Token": "wrong-token"}
+    )
+    assert wrong.status_code == 401
+
+
 def test_store_evicts_oldest_by_item_limit():
     store = make_store(max_items=2)
     first = store.put(image_bytes(color="red"), "1.png")
