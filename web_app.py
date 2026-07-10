@@ -283,7 +283,11 @@ def create_app(store: MemoryGalleryStore | None = None) -> FastAPI:
     ) -> object:
         expected = app_config.web_ingest_token
         supplied = request.headers.get("x-ingest-token", "")
-        if not expected or not hmac.compare_digest(expected, supplied):
+        # bytes로 비교: str 오버로드는 non-ASCII 입력에 TypeError를 던지므로(latin-1로
+        # 디코드된 헤더에 임의 바이트가 올 수 있음) 그대로 쓰면 401 대신 500이 된다.
+        if not expected or not hmac.compare_digest(
+            expected.encode(), supplied.encode("latin-1", "backslashreplace")
+        ):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
         max_bytes = app_config.web_ingest_max_mb * 1024 * 1024
         content_length = request.headers.get("content-length")

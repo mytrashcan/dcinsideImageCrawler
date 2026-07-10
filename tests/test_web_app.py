@@ -85,6 +85,19 @@ def test_ingest_rejects_invalid_image(monkeypatch, tmp_path):
     assert response.status_code == 415
 
 
+def test_ingest_non_ascii_token_returns_401_not_500(monkeypatch, tmp_path):
+    """비ASCII 헤더는 str hmac.compare_digest에서 TypeError → 500이 되면 안 된다."""
+    client, _ = make_client(monkeypatch, tmp_path)
+
+    response = client.post(
+        "/internal/images",
+        content=image_bytes(),
+        headers={b"x-ingest-token": "caf\xe9".encode("latin-1")},
+    )
+
+    assert response.status_code == 401
+
+
 def test_ingest_empty_body_with_valid_token_returns_415_not_401(monkeypatch, tmp_path):
     """launcher의 기동 프로브 계약: 빈 바디 + 올바른 토큰 = 415(인증 통과), 틀린 토큰 = 401."""
     client, _ = make_client(monkeypatch, tmp_path)
