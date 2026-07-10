@@ -1,4 +1,5 @@
 import io
+import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -42,6 +43,37 @@ def test_publish_retries_when_web_process_is_starting(monkeypatch):
     assert client.publish(b"image-bytes", "sample.jpg") == {"id": "abc.jpg"}
     assert post.call_count == 2
     sleep.assert_called_once_with(0.25)
+
+
+def test_publish_failure_log_does_not_include_image_metadata(monkeypatch, caplog):
+    response = MagicMock()
+    response.status_code = 401
+    error = requests.HTTPError(
+        "401 for http://127.0.0.1/internal/images?title=private-title&link=private-link",
+        response=response,
+    )
+    response.raise_for_status.side_effect = error
+    monkeypatch.setattr("Module.gallery_client.requests.post", MagicMock(return_value=response))
+    client = GalleryClient("http://127.0.0.1:8000", "secret", max_attempts=1)
+
+    with caplog.at_level(logging.WARNING, logger="Module.gallery_client"):
+        result = client.publish(
+            b"image-bytes",
+            "private-filename.jpg",
+            title="private-title",
+            link="private-link",
+            gallery="private-gallery",
+        )
+
+    assert result == {}
+    assert "HTTPError(status=401)" in caplog.text
+    for private_value in (
+        "private-filename.jpg",
+        "private-title",
+        "private-link",
+        "private-gallery",
+    ):
+        assert private_value not in caplog.text
 
 
 @pytest.mark.asyncio
