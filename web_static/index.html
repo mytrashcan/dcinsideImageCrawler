@@ -335,32 +335,13 @@
       padding: 60px 24px;
       color: #767676;
     }
-    #gate {
-      position: fixed;
-      inset: 0;
-      z-index: 1000;
-      background: #f5f5f5;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    #gate .gate-box {
-      text-align: center;
-      padding: 32px;
-    }
-    #gate .gate-logo { font-size: 24px; font-weight: 700; }
-    #gate p { color: #767676; margin: 10px 0 22px; }
-    #ts-widget { display: flex; justify-content: center; min-height: 65px; }
+    /* Turnstile invisible 위젯 컨테이너 (시각적 요소 없음 — 백그라운드 검증) */
+    #ts-widget { position: absolute; width: 0; height: 0; overflow: hidden; }
   </style>
 </head>
 <body>
-  <div id="gate">
-    <div class="gate-box">
-      <div class="gate-logo">자짤 갤러리</div>
-      <p>잠시만요, 사람인지 확인하고 있어요</p>
-      <div id="ts-widget"></div>
-    </div>
-  </div>
+  <!-- Turnstile invisible 위젯 (백그라운드 검증) -->
+  <div id="ts-widget"></div>
   <header>
     <div class="brand">
       <span class="logo">자짤 갤러리</span>
@@ -821,13 +802,11 @@
     function startFeed() {
       if (feedStarted) return;
       feedStarted = true;
-      const gate = document.getElementById('gate');
-      if (gate) gate.remove();
       loadFeed();
       setInterval(loadFeed, 5000);
     }
 
-    // Cloudflare Turnstile: 사이트키가 주입돼 있으면 사람 확인 후 진입, 아니면 바로 시작
+    // Cloudflare Turnstile: Invisible 모드 — 백그라운드 검증 완료 후 피드 시작
     const TS_SITEKEY = "{{TURNSTILE_SITEKEY}}";
     function onTurnstile(token) {
       fetch('/verify', {
@@ -841,7 +820,11 @@
     } else {
       (function initTs() {
         if (window.turnstile) {
-          turnstile.render('#ts-widget', { sitekey: TS_SITEKEY, callback: onTurnstile });
+          turnstile.render('#ts-widget', {
+            sitekey: TS_SITEKEY,
+            callback: onTurnstile,
+            size: 'invisible'
+          });
         } else {
           setTimeout(initTs, 120);
         }
