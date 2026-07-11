@@ -398,7 +398,12 @@
     }
 
     // ── 피드 내 AdFit 광고 (카드 사이사이, 가변 간격) ──
-    const AD_UNIT = 'DAN-029QuS7QZOLFJ0nJ';
+    const _adUnits = [
+      'DAN-029QuS7QZOLFJ0nJ',
+      'DAN-HvgKTVSnuTFErPSE',
+      'DAN-OWKjc9vpiXJ0Y0CT',
+      'DAN-DTb3RPXCNihczvgj',
+    ];
     const AD_W = 300, AD_H = 250;
     // 페이지 로드마다 다른 광고 간격 시퀀스 (5~8개 카드마다)
     const _adIntervals = Array.from({ length: 100 }, () => 5 + Math.floor(Math.random() * 4));
@@ -406,7 +411,7 @@
     const _adPool = [];
     let _adPoolNext = 0;
 
-    function _makeAd() {
+    function _makeAd(unit) {
       const el = document.createElement('div');
       el.style.cssText = [
         'display:flex', 'align-items:center', 'justify-content:center',
@@ -417,7 +422,7 @@
       const ins = document.createElement('ins');
       ins.className = 'kakao_ad_area';
       ins.style.display = 'none';
-      ins.dataset.adUnit = AD_UNIT;
+      ins.dataset.adUnit = unit;
       ins.dataset.adWidth = String(AD_W);
       ins.dataset.adHeight = String(AD_H);
       el.appendChild(ins);
@@ -426,7 +431,7 @@
 
     function _acquireAd() {
       const idx = _adPoolNext++;
-      if (!_adPool[idx]) _adPool[idx] = _makeAd();
+      if (!_adPool[idx]) _adPool[idx] = _makeAd(_adUnits[idx % _adUnits.length]);
       return _adPool[idx];
     }
 
