@@ -397,39 +397,38 @@
       return w <= 600 ? 2 : w <= 900 ? 3 : 4;
     }
 
-    // ── 피드 내 AdFit 광고 (카드 사이사이) ──
-    const FEED_ADS = [
-      { every: 6, w: 300, h: 250, unit: 'DAN-029QuS7QZOLFJ0nJ' },  // 중간 직사각형
-      { every: 12, w: 160, h: 600, unit: 'DAN-abKUjQ9L6gMnyv6X' }, // 스카이스크래퍼
-    ];
-    // DOM 노드 풀 — 광고는 한 번 SDK가 채우면 같은 노드를 재사용해서 유지됨
-    const _adPools = {};
-    const _adPoolIdx = {};
+    // ── 피드 내 AdFit 광고 (카드 사이사이, 가변 간격) ──
+    const AD_UNIT = 'DAN-029QuS7QZOLFJ0nJ';
+    const AD_W = 300, AD_H = 250;
+    // 페이지 로드마다 다른 광고 간격 시퀀스 (5~8개 카드마다)
+    const _adIntervals = Array.from({ length: 100 }, () => 5 + Math.floor(Math.random() * 4));
+    // DOM 노드 풀 — SDK가 한 번 채우면 같은 노드를 재사용해서 유지
+    const _adPool = [];
+    let _adPoolIdx = 0;
 
-    function _makeAdElement(cfg) {
+    function _makeAdElement() {
       const el = document.createElement('div');
-      el.style.cssText = 'display:flex;justify-content:center;margin-bottom:16px;width:100%;';
+      el.style.cssText = [
+        'display:flex', 'align-items:center', 'justify-content:center',
+        'margin-bottom:16px', 'background:#fff', 'border-radius:16px',
+        'box-shadow:0 1px 2px rgba(0,0,0,0.05)', 'padding:16px 0',
+        'min-height:' + AD_H + 'px', 'width:100%',
+      ].join(';');
       const ins = document.createElement('ins');
       ins.className = 'kakao_ad_area';
       ins.style.display = 'none';
-      ins.dataset.adUnit = cfg.unit;
-      ins.dataset.adWidth = String(cfg.w);
-      ins.dataset.adHeight = String(cfg.h);
+      ins.dataset.adUnit = AD_UNIT;
+      ins.dataset.adWidth = String(AD_W);
+      ins.dataset.adHeight = String(AD_H);
       el.appendChild(ins);
       return el;
     }
 
-    function _acquireAd(cfg) {
-      const key = cfg.unit;
-      if (!_adPools[key]) { _adPools[key] = []; _adPoolIdx[key] = 0; }
-      let el = _adPools[key][_adPoolIdx[key]];
-      if (!el) { el = _makeAdElement(cfg); _adPools[key].push(el); }
-      _adPoolIdx[key]++;
+    function _acquireAd() {
+      let el = _adPool[_adPoolIdx];
+      if (!el) { el = _makeAdElement(); _adPool.push(el); }
+      _adPoolIdx++;
       return el;
-    }
-
-    function _resetAdPool() {
-      for (const key of Object.keys(_adPoolIdx)) _adPoolIdx[key] = 0;
     }
 
     let _adSdkLoaded = false;
@@ -452,7 +451,10 @@
         cols.push(c); heights.push(0); frag.appendChild(c);
       }
       const colW = Math.max(1, (gallery.clientWidth - 48 - 16 * (n - 1)) / n);
-      _resetAdPool();
+      // 가변 간격 카운트다운으로 광고 위치가 매번 다르게
+      _adPoolIdx = 0;
+      let adCountdown = _adIntervals[0];
+      let adIdx = 0;
       let cardIdx = 0;
       for (const id of displayOrder) {
         const el = cards.get(id);
@@ -462,16 +464,17 @@
         cols[k].appendChild(el);
         if (!el.hidden) heights[k] += colW * (Number(el.dataset.ratio) || 1) + 62;
         cardIdx++;
-        for (const acfg of FEED_ADS) {
-          if (cardIdx % acfg.every === 0) {
-            const ad = _acquireAd(acfg);
-            cols[k].appendChild(ad);
-            heights[k] += acfg.h + 16;
-          }
+        adCountdown--;
+        if (adCountdown <= 0) {
+          const ad = _acquireAd();
+          cols[k].appendChild(ad);
+          heights[k] += AD_H + 16;
+          adIdx++;
+          adCountdown = _adIntervals[adIdx % _adIntervals.length];
         }
       }
       gallery.replaceChildren(frag);
-      _loadAdSdk(); // 광고 슬롯이 DOM에 존재한 후 SDK 로딩 → 정상 스캔
+      _loadAdSdk();
     }
 
     let lastColCount = colCount();
