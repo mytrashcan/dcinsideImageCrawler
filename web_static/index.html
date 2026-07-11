@@ -806,7 +806,7 @@
       setInterval(loadFeed, 5000);
     }
 
-    // Cloudflare Turnstile: Invisible 모드 — 백그라운드 검증 완료 후 피드 시작
+    // Cloudflare Turnstile: Invisible 모드 — 쿠키가 유효하면 즉시 진입, 아니면 백그라운드 검증
     const TS_SITEKEY = "{{TURNSTILE_SITEKEY}}";
     function onTurnstile(token) {
       fetch('/verify', {
@@ -818,6 +818,9 @@
     if (!TS_SITEKEY) {
       startFeed();
     } else {
+      // 쿠키가 유효하면 Turnstile 생략 — feed가 200을 반환하는지 먼저 확인
+      fetch('/feed?limit=1').then(r => { if (r.ok) startFeed(); }).catch(() => {});
+      // Turnstile invisible fallback (쿠키 만료 등 대비)
       (function initTs() {
         if (window.turnstile) {
           turnstile.render('#ts-widget', {
