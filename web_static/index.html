@@ -50,9 +50,6 @@
           crossorigin="anonymous"></script>
   <meta name="google-adsense-account" content="ca-pub-4317936564749286" />
 
-  <!-- Kakao AdFit -->
-  <script type="text/javascript" src="//t1.kakaocdn.net/kas/static/ba.min.js" async></script>
-
   <!-- Cloudflare Turnstile -->
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
   <style>
@@ -405,11 +402,11 @@
       { every: 6, w: 300, h: 250, unit: 'DAN-029QuS7QZOLFJ0nJ' },  // 중간 직사각형
       { every: 12, w: 160, h: 600, unit: 'DAN-abKUjQ9L6gMnyv6X' }, // 스카이스크래퍼
     ];
-    const _feedAdCache = {};
+    // DOM 노드 풀 — 광고는 한 번 SDK가 채우면 같은 노드를 재사용해서 유지됨
+    const _adPools = {};
+    const _adPoolIdx = {};
 
-    function _getFeedAd(cfg) {
-      const key = cfg.unit;
-      if (_feedAdCache[key]) return _feedAdCache[key];
+    function _makeAdElement(cfg) {
       const el = document.createElement('div');
       el.style.cssText = 'display:flex;justify-content:center;margin-bottom:16px;width:100%;';
       const ins = document.createElement('ins');
@@ -419,8 +416,30 @@
       ins.dataset.adWidth = String(cfg.w);
       ins.dataset.adHeight = String(cfg.h);
       el.appendChild(ins);
-      _feedAdCache[key] = el;
       return el;
+    }
+
+    function _acquireAd(cfg) {
+      const key = cfg.unit;
+      if (!_adPools[key]) { _adPools[key] = []; _adPoolIdx[key] = 0; }
+      let el = _adPools[key][_adPoolIdx[key]];
+      if (!el) { el = _makeAdElement(cfg); _adPools[key].push(el); }
+      _adPoolIdx[key]++;
+      return el;
+    }
+
+    function _resetAdPool() {
+      for (const key of Object.keys(_adPoolIdx)) _adPoolIdx[key] = 0;
+    }
+
+    let _adSdkLoaded = false;
+    function _loadAdSdk() {
+      if (_adSdkLoaded) return;
+      _adSdkLoaded = true;
+      const s = document.createElement('script');
+      s.src = '//t1.kakaocdn.net/kas/static/ba.min.js';
+      s.async = true;
+      document.head.appendChild(s);
     }
 
     function rebuildLayout() {
@@ -433,29 +452,26 @@
         cols.push(c); heights.push(0); frag.appendChild(c);
       }
       const colW = Math.max(1, (gallery.clientWidth - 48 - 16 * (n - 1)) / n);
+      _resetAdPool();
       let cardIdx = 0;
       for (const id of displayOrder) {
         const el = cards.get(id);
         if (!el) continue;
         let k = 0;
         for (let i = 1; i < n; i++) if (heights[i] < heights[k]) k = i;
-        cols[k].appendChild(el); // 기존 노드 이동이라 이미지 재로딩 없음
-        if (!el.hidden) heights[k] += colW * (Number(el.dataset.ratio) || 1) + 62; // 62≈메타줄+여백
+        cols[k].appendChild(el);
+        if (!el.hidden) heights[k] += colW * (Number(el.dataset.ratio) || 1) + 62;
         cardIdx++;
-        // 카드 사이사이에 AdFit 광고 삽입 (여러 단위를 각각의 주기로)
         for (const acfg of FEED_ADS) {
           if (cardIdx % acfg.every === 0) {
-            const ad = _getFeedAd(acfg).cloneNode(true);
+            const ad = _acquireAd(acfg);
             cols[k].appendChild(ad);
-            heights[k] += acfg.h + 16; // 광고 높이 + margin-bottom
+            heights[k] += acfg.h + 16;
           }
         }
       }
       gallery.replaceChildren(frag);
-      // 동적으로 삽입한 광고를 AdFit SDK에 알림
-      if (typeof AdFit !== 'undefined') {
-        try { AdFit.Relayout(); } catch (_) {}
-      }
+      _loadAdSdk(); // 광고 슬롯이 DOM에 존재한 후 SDK 로딩 → 정상 스캔
     }
 
     let lastColCount = colCount();
