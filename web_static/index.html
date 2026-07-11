@@ -445,7 +445,7 @@
         // 카드 사이사이에 AdFit 광고 삽입 (여러 단위를 각각의 주기로)
         for (const acfg of FEED_ADS) {
           if (cardIdx % acfg.every === 0) {
-            const ad = _getFeedAd(acfg);
+            const ad = _getFeedAd(acfg).cloneNode(true);
             cols[k].appendChild(ad);
             heights[k] += acfg.h + 16; // 광고 높이 + margin-bottom
           }
