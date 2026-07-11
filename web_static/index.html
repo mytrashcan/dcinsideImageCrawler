@@ -367,14 +367,6 @@
   <button id="newItemsBtn" hidden>새 자짤 0개 ↑</button>
   <main id="gallery" class="masonry"></main>
 
-  <!-- Kakao AdFit 광고단위 (심사용) -->
-  <div style="display:flex;justify-content:center;padding:8px 24px 0">
-    <ins class="kakao_ad_area" style="display:none;"
-         data-ad-unit="DAN-abKUjQ9L6gMnyv6X"
-         data-ad-width="160"
-         data-ad-height="600"></ins>
-  </div>
-
   <footer>
     <a href="/request">갤러리 추가 요청</a>
     <span>·</span>
@@ -405,24 +397,30 @@
     // 예측하므로 이미지 로딩 전에도 배치가 확정적이다.
     function colCount() {
       const w = window.innerWidth;
-      return w <= 600 ? 2 : w <= 900 ? 3 : w <= 1200 ? 4 : 5;
+      return w <= 600 ? 2 : w <= 900 ? 3 : 4;
     }
 
-    // ── 피드 내 AdFit 광고 (카드 사이사이 300×250) ──
-    const FEED_AD_EVERY = 6; // N개 카드마다 광고 1개
-    let _feedAdEl = null;
-    function _getFeedAd() {
-      if (_feedAdEl) return _feedAdEl;
-      _feedAdEl = document.createElement('div');
-      _feedAdEl.style.cssText = 'display:flex;justify-content:center;margin-bottom:16px;width:100%;';
+    // ── 피드 내 AdFit 광고 (카드 사이사이) ──
+    const FEED_ADS = [
+      { every: 6, w: 300, h: 250, unit: 'DAN-029QuS7QZOLFJ0nJ' },  // 중간 직사각형
+      { every: 12, w: 160, h: 600, unit: 'DAN-abKUjQ9L6gMnyv6X' }, // 스카이스크래퍼
+    ];
+    const _feedAdCache = {};
+
+    function _getFeedAd(cfg) {
+      const key = cfg.unit;
+      if (_feedAdCache[key]) return _feedAdCache[key];
+      const el = document.createElement('div');
+      el.style.cssText = 'display:flex;justify-content:center;margin-bottom:16px;width:100%;';
       const ins = document.createElement('ins');
       ins.className = 'kakao_ad_area';
       ins.style.display = 'none';
-      ins.dataset.adUnit = 'DAN-029QuS7QZOLFJ0nJ';
-      ins.dataset.adWidth = '300';
-      ins.dataset.adHeight = '250';
-      _feedAdEl.appendChild(ins);
-      return _feedAdEl;
+      ins.dataset.adUnit = cfg.unit;
+      ins.dataset.adWidth = String(cfg.w);
+      ins.dataset.adHeight = String(cfg.h);
+      el.appendChild(ins);
+      _feedAdCache[key] = el;
+      return el;
     }
 
     function rebuildLayout() {
@@ -444,11 +442,13 @@
         cols[k].appendChild(el); // 기존 노드 이동이라 이미지 재로딩 없음
         if (!el.hidden) heights[k] += colW * (Number(el.dataset.ratio) || 1) + 62; // 62≈메타줄+여백
         cardIdx++;
-        // N개 카드마다 가장 짧은 컬럼에 광고 삽입
-        if (cardIdx % FEED_AD_EVERY === 0) {
-          const ad = _getFeedAd();
-          cols[k].appendChild(ad);
-          heights[k] += 250 + 16; // 광고 높이 + margin-bottom
+        // 카드 사이사이에 AdFit 광고 삽입 (여러 단위를 각각의 주기로)
+        for (const acfg of FEED_ADS) {
+          if (cardIdx % acfg.every === 0) {
+            const ad = _getFeedAd(acfg);
+            cols[k].appendChild(ad);
+            heights[k] += acfg.h + 16; // 광고 높이 + margin-bottom
+          }
         }
       }
       gallery.replaceChildren(frag);
