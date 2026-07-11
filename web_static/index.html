@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://pagead2.googlesyndication.com" crossorigin />
   <link rel="preconnect" href="https://www.googletagmanager.com" />
   <link rel="preconnect" href="https://challenges.cloudflare.com" />
+  <link rel="preconnect" href="//t1.kakaocdn.net" crossorigin />
 
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -48,6 +49,9 @@
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4317936564749286"
           crossorigin="anonymous"></script>
   <meta name="google-adsense-account" content="ca-pub-4317936564749286" />
+
+  <!-- Kakao AdFit -->
+  <script type="text/javascript" src="//t1.kakaocdn.net/kas/static/ba.min.js" async></script>
 
   <!-- Cloudflare Turnstile -->
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
@@ -381,6 +385,15 @@
   </header>
   <button id="newItemsBtn" hidden>새 자짤 0개 ↑</button>
   <main id="gallery" class="masonry"></main>
+
+  <!-- Kakao AdFit 광고단위 (심사용) -->
+  <div style="display:flex;justify-content:center;padding:8px 24px 0">
+    <ins class="kakao_ad_area" style="display:none;"
+         data-ad-unit="DAN-abKUjQ9L6gMnyv6X"
+         data-ad-width="160"
+         data-ad-height="600"></ins>
+  </div>
+
   <footer>
     <a href="/request">갤러리 추가 요청</a>
     <span>·</span>
@@ -414,6 +427,23 @@
       return w <= 600 ? 2 : w <= 900 ? 3 : w <= 1200 ? 4 : 5;
     }
 
+    // ── 피드 내 AdFit 광고 (카드 사이사이 300×250) ──
+    const FEED_AD_EVERY = 6; // N개 카드마다 광고 1개
+    let _feedAdEl = null;
+    function _getFeedAd() {
+      if (_feedAdEl) return _feedAdEl;
+      _feedAdEl = document.createElement('div');
+      _feedAdEl.style.cssText = 'display:flex;justify-content:center;margin-bottom:16px;width:100%;';
+      const ins = document.createElement('ins');
+      ins.className = 'kakao_ad_area';
+      ins.style.display = 'none';
+      ins.dataset.adUnit = 'DAN-029QuS7QZOLFJ0nJ';
+      ins.dataset.adWidth = '300';
+      ins.dataset.adHeight = '250';
+      _feedAdEl.appendChild(ins);
+      return _feedAdEl;
+    }
+
     function rebuildLayout() {
       const n = colCount();
       const cols = [], heights = [];
@@ -424,6 +454,7 @@
         cols.push(c); heights.push(0); frag.appendChild(c);
       }
       const colW = Math.max(1, (gallery.clientWidth - 48 - 16 * (n - 1)) / n);
+      let cardIdx = 0;
       for (const id of displayOrder) {
         const el = cards.get(id);
         if (!el) continue;
@@ -431,8 +462,19 @@
         for (let i = 1; i < n; i++) if (heights[i] < heights[k]) k = i;
         cols[k].appendChild(el); // 기존 노드 이동이라 이미지 재로딩 없음
         if (!el.hidden) heights[k] += colW * (Number(el.dataset.ratio) || 1) + 62; // 62≈메타줄+여백
+        cardIdx++;
+        // N개 카드마다 가장 짧은 컬럼에 광고 삽입
+        if (cardIdx % FEED_AD_EVERY === 0) {
+          const ad = _getFeedAd();
+          cols[k].appendChild(ad);
+          heights[k] += 250 + 16; // 광고 높이 + margin-bottom
+        }
       }
       gallery.replaceChildren(frag);
+      // 동적으로 삽입한 광고를 AdFit SDK에 알림
+      if (typeof AdFit !== 'undefined') {
+        try { AdFit.Relayout(); } catch (_) {}
+      }
     }
 
     let lastColCount = colCount();
