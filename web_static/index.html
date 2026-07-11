@@ -402,6 +402,9 @@
     const AD_W = 300, AD_H = 250;
     // 페이지 로드마다 다른 광고 간격 시퀀스 (5~8개 카드마다)
     const _adIntervals = Array.from({ length: 100 }, () => 5 + Math.floor(Math.random() * 4));
+    // 풀: 한 번 SDK가 채운 노드는 영구 재사용 → blank 없음
+    const _adPool = [];
+    let _adPoolNext = 0;
 
     function _makeAd() {
       const el = document.createElement('div');
@@ -419,6 +422,12 @@
       ins.dataset.adHeight = String(AD_H);
       el.appendChild(ins);
       return el;
+    }
+
+    function _acquireAd() {
+      const idx = _adPoolNext++;
+      if (!_adPool[idx]) _adPool[idx] = _makeAd();
+      return _adPool[idx];
     }
 
     let _adSdkLoaded = false;
@@ -442,6 +451,7 @@
       }
       const colW = Math.max(1, (gallery.clientWidth - 48 - 16 * (n - 1)) / n);
       // 가변 간격 카운트다운으로 광고 위치가 매번 다르게
+      _adPoolNext = 0;
       let adCountdown = _adIntervals[0];
       let adIdx = 0;
       let cardIdx = 0;
@@ -455,7 +465,7 @@
         cardIdx++;
         adCountdown--;
         if (adCountdown <= 0) {
-          const ad = _makeAd();    // 매 위치마다 새 노드 생성 → 이동 없음, blank 없음
+          const ad = _acquireAd();  // 풀에서 재사용 → SDK가 채운 노드 유지
           cols[k].appendChild(ad);
           heights[k] += AD_H + 16;
           adIdx++;
