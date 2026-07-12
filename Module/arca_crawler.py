@@ -6,8 +6,9 @@ DCInsideImageCrawler의 Module/crawler.py와 동일한 인터페이스를 제공
 - 아카라이브 전용 HTML 셀렉터 사용
 """
 import logging
+import os
 import re
-from urllib.parse import urljoin
+from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
 
 import cloudscraper
 from bs4 import BeautifulSoup, SoupStrainer
@@ -18,7 +19,6 @@ from Module.lru_cache import LRUCache
 logger = logging.getLogger(__name__)
 
 ARCA_BASE = "https://arca.live"
-IMAGE_CDN_RE = re.compile(r"//ac[-a-z0-9]*\.namu\.la/")
 _VROW_STRAINER = SoupStrainer(attrs={"class": re.compile(r"\bvrow\b")})
 POST_SKIP_COUNT = 10
 
@@ -26,6 +26,39 @@ POST_SKIP_COUNT = 10
 def _mask_proxy(url: str) -> str:
     """프록시 URL의 자격증명(user:pass@)을 로그에 노출하지 않도록 가린다."""
     return re.sub(r"//[^/@]+@", "//***:***@", url)
+
+
+def _fixed_arca_url(base_url: str, href: str) -> str | None:
+    candidate = urlsplit(urljoin(base_url, href))
+    try:
+        has_custom_port = candidate.port is not None
+    except ValueError:
+        return None
+    if (
+        candidate.scheme != "https"
+        or candidate.hostname != "arca.live"
+        or candidate.username
+        or candidate.password
+        or has_custom_port
+    ):
+        return None
+    return urlunsplit((candidate.scheme, candidate.netloc, candidate.path, candidate.query, ""))
+
+
+def _is_allowed_image_url(url: str) -> bool:
+    candidate = urlsplit(url)
+    hostname = (candidate.hostname or "").lower()
+    try:
+        has_custom_port = candidate.port is not None
+    except ValueError:
+        return False
+    return (
+        candidate.scheme == "https"
+        and not candidate.username
+        and not candidate.password
+        and not has_custom_port
+        and (hostname == "arca.live" or hostname.endswith(".namu.la"))
+    )
 
 
 def _create_session():
@@ -80,16 +113,17 @@ class ArcaliveCrawler:
         posts = posts[POST_SKIP_COUNT:]
         new_posts = []
         for post in posts:
-            dedup_key = (post["title"], post["post_id"])
-            if dedup_key not in self.sent_items:
+            if post["post_id"] not in self.sent_items:
                 new_posts.append(post)
 
         for post in new_posts[:max_posts]:
-            self.sent_items.add((post["title"], post["post_id"]))
+            self.sent_items.add(post["post_id"])
 
         return new_posts[:max_posts]
 
     def _parse_hybrid_row(self, vrow):
+        if self._is_notice_row(vrow):
+            return None
         title_el = vrow.select_one("a.title.hybrid-title")
         if not title_el:
             return None
@@ -98,13 +132,11 @@ class ArcaliveCrawler:
             return None
         if vrow.select_one(".media-icon") is None:
             return None
-        return {
-            "link": urljoin(ARCA_BASE, href),
-            "title": title_el.get_text(strip=True),
-            "post_id": self._extract_post_id(href),
-        }
+        return self._build_post(title_el.get_text(strip=True), href)
 
     def _parse_column_row(self, vrow):
+        if self._is_notice_row(vrow):
+            return None
         href = vrow.get("href", "")
         if not href:
             return None
@@ -113,11 +145,20 @@ class ArcaliveCrawler:
             return None
         if vrow.select_one(".media-icon") is None:
             return None
-        return {
-            "link": urljoin(ARCA_BASE, href),
-            "title": title_el.get_text(strip=True),
-            "post_id": self._extract_post_id(href),
-        }
+        return self._build_post(title_el.get_text(strip=True), href)
+
+    @staticmethod
+    def _is_notice_row(vrow) -> bool:
+        classes = set(vrow.get("class", []))
+        return "notice" in classes or any(value.startswith("notice-") for value in classes)
+
+    @classmethod
+    def _build_post(cls, title: str, href: str) -> dict | None:
+        link = _fixed_arca_url(ARCA_BASE, href)
+        post_id = cls._extract_post_id(link or "")
+        if link is None or not post_id:
+            return None
+        return {"link": link, "title": title, "post_id": post_id}
 
     @staticmethod
     def _extract_post_id(href: str) -> str:
@@ -158,19 +199,21 @@ class ArcaliveCrawler:
 
         src = img_tag.get("src", "")
         orig = img_tag.get("data-originalurl", "")
-        if not IMAGE_CDN_RE.search(src) and not IMAGE_CDN_RE.search(orig):
+        source = orig or src
+        if not source:
             return
 
-        download_url = orig or src
-        if not download_url.startswith("http"):
-            download_url = "https:" + download_url
+        download_url = urljoin(ARCA_BASE, source)
+        if not _is_allowed_image_url(download_url):
+            return
 
-        clean_url = download_url.split("?")[0]
+        parts = urlsplit(download_url)
+        clean_url = urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
         if clean_url in seen_urls:
             return
         seen_urls.add(clean_url)
 
-        filename = clean_url.split("/")[-1]
+        filename = os.path.basename(unquote(parts.path))
         if not filename:
             pid = self._extract_post_id(post_url) if post_url else ""
             filename = f"arca_{pid}_{len(images)}.jpg"
