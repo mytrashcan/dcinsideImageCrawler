@@ -192,7 +192,7 @@ def create_app(store: MemoryGalleryStore | None = None) -> FastAPI:
     ingest_slots = asyncio.Semaphore(2)
     # 공개용 이미지 피드일 뿐 소비 대상 API가 아니므로 대화형 문서/스키마는 끈다
     # (불필요한 내부 라우트 노출 방지).
-    app = FastAPI(title="dcinsideImageCrawler Gallery", docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(title="Gallery Image Relay", docs_url=None, redoc_url=None, openapi_url=None)
 
     def _page(name: str) -> HTMLResponse:
         f = static_dir / name

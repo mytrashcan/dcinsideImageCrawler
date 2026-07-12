@@ -1,8 +1,8 @@
-# dcinsideImageCrawler - DCInside & Arcalive Image Crawler & Bot Sender
+# Gallery Image Relay
 
-[![CI](https://github.com/mytrashcan/dcinsideImageCrawler/actions/workflows/ci.yml/badge.svg)](https://github.com/mytrashcan/dcinsideImageCrawler/actions/workflows/ci.yml)
+[![CI](https://github.com/mytrashcan/gallery-image-relay/actions/workflows/ci.yml/badge.svg)](https://github.com/mytrashcan/gallery-image-relay/actions/workflows/ci.yml)
 
-**dcinsideImageCrawler** is a tool that scrapes images from posts on **DCInside** and **Arcalive** (arca.live) and automatically sends them to **Discord** and **Telegram** bots. The tool is designed to run on a cloud server like **Oracle Cloud** and **Amazon Web Services**, where it downloads images from posts and sends them to designated chat channels via bots.
+**Gallery Image Relay** scrapes images from **DCInside** and **Arcalive** (arca.live), then relays them to **Discord**, **Telegram**, and an optional ephemeral web gallery. It is designed to run on cloud servers such as **Oracle Cloud** and **Amazon Web Services**.
 
 Two crawler types are supported:
 
@@ -43,12 +43,12 @@ Both crawlers share the same image pipeline (`ImageHandler` for compression/dedu
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/mytrashcan/dcinsideImageCrawler.git
+   git clone https://github.com/mytrashcan/gallery-image-relay.git dcinsideImageCrawler
    ```
 
 2. Navigate to the project directory:
    ```bash
-   cd dcinsideImageCrawler
+   cd gallery-image-relay
    ```
 
 3. (Optional) Set up a virtual environment:
@@ -250,7 +250,7 @@ Notes for small instances (1 GB RAM free tier):
 ## Project Structure
 
 ```
-dcinsideImageCrawler/
+<project-root>/
 ├── launcher.py            # Process manager - runs multiple gallery crawlers
 ├── run_gallery.py         # Single gallery runner (DCInside/Arcalive, dispatched by "type")
 ├── run_web_gallery.py     # Single gallery runner + embedded web gallery (FastAPI)

@@ -1,6 +1,6 @@
 """아카라이브(Arcalive) 전용 크롤러.
 
-DCInsideImageCrawler의 Module/crawler.py와 동일한 인터페이스를 제공하지만:
+Gallery Image Relay의 Module/crawler.py와 동일한 인터페이스를 제공하지만:
 - cloudscraper로 요청 (맥 IP 경유 시 Cloudflare 챌린지 미발생)
 - 게시글 내 모든 이미지를 추출 (DCInside는 최상단 1개만)
 - 아카라이브 전용 HTML 셀렉터 사용
