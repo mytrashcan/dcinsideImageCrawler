@@ -1,13 +1,15 @@
 # Gallery Image Relay
 
 [![CI](https://github.com/mytrashcan/gallery-image-relay/actions/workflows/ci.yml/badge.svg)](https://github.com/mytrashcan/gallery-image-relay/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![License: GPL](https://img.shields.io/badge/License-GPL-blue.svg)](LICENSE)
 
 **Gallery Image Relay** scrapes images from **DCInside** and **Arcalive** (arca.live), then relays them to **Discord**, **Telegram**, and an optional ephemeral web gallery. It is designed to run on cloud servers such as **Oracle Cloud** and **Amazon Web Services**.
 
 Two crawler types are supported:
 
-- **DCInside** (`Module/crawler.py` + `Module/dcbot.py`) - scrapes `gall.dcinside.com`, downloads **one image per post** (top image only, as spam prevention), and delivers to Discord + Telegram.
-- **Arcalive** (`Module/arca_crawler.py` + `Module/arca_bot.py`) - scrapes `arca.live` using `cloudscraper` (Cloudflare bypass), downloads **all images from a post**, and delivers to Discord only (multi-embed, up to 10 images per message).
+- **DCInside** (`Module/crawler.py` + `Module/dcbot.py`) - waits behind a 20-post moderation window, prefers the original attachment, and relays one image per post to Discord and Telegram.
+- **Arcalive** (`Module/arca_crawler.py` + `Module/arca_bot.py`) - waits behind a 10-image-post moderation window, accesses pages through a residential SOCKS proxy when configured, and relays every image in a post to Discord.
 
 Both crawlers share the same image pipeline (`ImageHandler` for compression/dedup), delivery layer (`MessageSender`), and the optional ephemeral web gallery (`web_app`).
 
@@ -27,6 +29,8 @@ Both crawlers share the same image pipeline (`ImageHandler` for compression/dedu
 - Optional **ephemeral web gallery** - serves collected images in a near real-time, Pinterest-style masonry feed (titles link to the source post) that auto-expires (TTL/item-cap), no persistent storage
   - Installable as a PWA, ships `sitemap.xml`/`robots.txt`/`security.txt`, optional Cloudflare Turnstile bot gate and AdSense hooks
 - Duplicate image detection via SHA256 hashing
+- Stable post-ID deduplication and strict source/CDN URL validation
+- Moderation safety windows before newly published posts become eligible for crawling
 - Multi-process architecture for concurrent gallery crawling
 - Test suite (pytest) and lint (ruff) enforced by GitHub Actions CI
 
@@ -48,7 +52,7 @@ Both crawlers share the same image pipeline (`ImageHandler` for compression/dedu
 
 2. Navigate to the project directory:
    ```bash
-   cd gallery-image-relay
+   cd dcinsideImageCrawler
    ```
 
 3. (Optional) Set up a virtual environment:
@@ -120,7 +124,7 @@ No code changes required - just restart the launcher.
 
 ## Web gallery (optional)
 
-You can serve the collected images as a live, **ephemeral** web feed - a Pinterest-style masonry grid at `http://<host>:8000/` that updates roughly in real time (the page polls every 5 seconds and only adds new cards). Post titles link back to the original DCInside post.
+You can serve the collected images as a live, **ephemeral** web feed - a Pinterest-style masonry grid at `http://<host>:8000/` that updates roughly in real time (the page polls every 5 seconds and only adds new cards). Post titles link back to their original source posts.
 
 **Images are never written to disk.** The web process owns a bounded in-memory store. Images disappear when they exceed the TTL, item limit, or byte limit, and every image disappears immediately when the web process restarts.
 
