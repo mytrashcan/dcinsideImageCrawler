@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from unittest.mock import MagicMock
 
 from PIL import Image
 
@@ -119,6 +120,58 @@ class TestProcessImage:
         assert calls == [800, 200]
         assert len(discord_buffer.getvalue()) == 790
         assert len(telegram_buffer.getvalue()) == 190
+
+
+class TestDownloadImages:
+    def make_handler(self, html: str, image_data: bytes) -> ImageHandler:
+        handler = ImageHandler()
+        page_response = MagicMock(text=html)
+        image_response = MagicMock(content=image_data)
+        handler.session = MagicMock()
+        handler.session.get.side_effect = [page_response, image_response]
+        return handler
+
+    def test_prefers_original_attachment_and_uses_label_as_filename(self) -> None:
+        data = make_png_bytes()
+        html = (
+            '<div class="writing_view_box"><img src="https://dcimg8.dcinside.co.kr/inline.jpg"></div>'
+            '<div class="appending_file_box"><ul><li>'
+            '<a href="https://dcimg2.dcinside.com/viewimage.php?no=original">photo.png</a>'
+            "</li></ul></div>"
+        )
+        handler = self.make_handler(html, data)
+
+        images = handler.download_images(
+            "https://gall.dcinside.com/mgallery/board/view/?id=test&no=1"
+        )
+
+        assert images[0][2] == "photo.png"
+        assert handler.session.get.call_args_list[1].args[0].endswith("no=original")
+
+    def test_falls_back_to_inline_image_when_attachment_is_missing(self) -> None:
+        data = make_png_bytes()
+        html = '<div class="writing_view_box"><img data-original="https://dcimg8.dcinside.co.kr/original.png"></div>'
+        handler = self.make_handler(html, data)
+
+        images = handler.download_images(
+            "https://gall.dcinside.com/mgallery/board/view/?id=test&no=1"
+        )
+
+        assert images[0][2] == "original.png"
+        assert handler.session.get.call_args_list[1].args[0].endswith("original.png")
+
+    def test_rejects_external_attachment_url(self) -> None:
+        html = (
+            '<div class="appending_file_box"><ul><li>'
+            '<a href="https://evil.example/image.png">image.png</a>'
+            "</li></ul></div>"
+        )
+        handler = self.make_handler(html, make_png_bytes())
+
+        assert handler.download_images(
+            "https://gall.dcinside.com/mgallery/board/view/?id=test&no=1"
+        ) is None
+        assert handler.session.get.call_count == 1
 
 
 class TestCompress:

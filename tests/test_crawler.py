@@ -7,10 +7,11 @@ import pytest
 from Module.crawler import BoundedSet, DCInsideCrawler
 
 
-def make_post_row(title: object, post_id: object, has_image: object=False) -> object:
+def make_post_row(title: object, post_id: object, has_image: object=False, notice: object=False) -> object:
     icon = '<em class="icon_img icon_pic"></em>' if has_image else ""
+    data_type = ' data-type="icon_notice"' if notice else ""
     return f"""
-    <tr class="ub-content us-post">
+    <tr class="ub-content us-post"{data_type}>
         <td class="gall_tit ub-word">
             <a href="/mgallery/board/view/?id=test&no={post_id}">{title}</a>{icon}
         </td>
@@ -65,20 +66,21 @@ class TestBoundedSet:
 
 
 class TestGetLatestPost:
-    def test_skips_first_20_rows(self) -> None:
-        # 앞 20개는 건너뛰므로 21번째 행이 반환되어야 함
-        rows = [make_post_row(f"post{i}", i, has_image=True) for i in range(25)]
+    def test_returns_first_normal_post_without_fixed_row_skip(self) -> None:
+        rows = [make_post_row("notice", 999, has_image=True, notice=True)]
+        rows += [make_post_row(f"post{i}", i, has_image=True) for i in range(25)]
         crawler = make_crawler(make_list_html(rows))
 
         post = crawler.get_latest_post()
 
         assert post is not None
-        assert post["title"] == "post20"
-        assert post["link"].endswith("no=20")
+        assert post["title"] == "post0"
+        assert post["link"].endswith("no=0")
+        assert post["post_id"] == "0"
         assert post["has_image"] is True
 
     def test_detects_post_without_image(self) -> None:
-        rows = [make_post_row(f"post{i}", i, has_image=False) for i in range(25)]
+        rows = [make_post_row("post", 1, has_image=False)]
         crawler = make_crawler(make_list_html(rows))
 
         post = crawler.get_latest_post()
@@ -87,14 +89,25 @@ class TestGetLatestPost:
         assert post["has_image"] is False
 
     def test_does_not_return_same_post_twice(self) -> None:
-        rows = [make_post_row(f"post{i}", i, has_image=True) for i in range(25)]
+        rows = [make_post_row("same title", 1, has_image=True)]
+        rows += [make_post_row("same title", 2, has_image=True)]
         crawler = make_crawler(make_list_html(rows))
 
         first = crawler.get_latest_post()
         second = crawler.get_latest_post()
 
-        assert first["title"] == "post20"
-        assert second is None or second["title"] != first["title"]
+        assert first["post_id"] == "1"
+        assert second["post_id"] == "2"
+
+    def test_ignores_external_and_non_post_links(self) -> None:
+        rows = [
+            '<tr class="ub-content"><td class="gall_tit"><a href="https://evil.example/board/view/?no=1">bad</a></td></tr>',
+            '<tr class="ub-content"><td class="gall_tit"><a href="/mgallery/board/lists/?id=test">list</a></td></tr>',
+            make_post_row("post", 3, has_image=True),
+        ]
+        crawler = make_crawler(make_list_html(rows))
+
+        assert crawler.get_latest_post()["post_id"] == "3"
 
     def test_returns_none_when_no_posts(self) -> None:
         crawler = make_crawler("<html><body></body></html>")
