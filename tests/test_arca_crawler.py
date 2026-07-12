@@ -7,7 +7,13 @@ from __future__ import annotations
 
 from bs4 import BeautifulSoup
 
-from Module.arca_crawler import ArcaliveCrawler, _create_session, _mask_proxy
+from Module.arca_crawler import (
+    ArcaliveCrawler,
+    _create_session,
+    _fixed_arca_url,
+    _is_allowed_image_url,
+    _mask_proxy,
+)
 
 
 class FakeResponse:
@@ -92,6 +98,31 @@ def test_parse_hybrid_row() -> None:
     assert post["link"] == "https://arca.live/b/hotdeal/42"
 
 
+def test_parse_rows_reject_notices_and_external_links() -> None:
+    c = make_crawler(FakeSession())
+    notice = soup_one(
+        '<a class="vrow column notice notice-board" href="/b/genshin/1">'
+        '<span class="title">공지</span><span class="media-icon"></span></a>',
+        "a.vrow.column",
+    )
+    external = soup_one(
+        '<a class="vrow column" href="https://evil.example/b/genshin/2">'
+        '<span class="title">외부</span><span class="media-icon"></span></a>',
+        "a.vrow.column",
+    )
+
+    assert c._parse_column_row(notice) is None
+    assert c._parse_column_row(external) is None
+
+
+def test_fixed_arca_url_strips_fragment_and_rejects_unsafe_urls() -> None:
+    assert _fixed_arca_url("https://arca.live", "/b/test/1?x=1#fragment") == (
+        "https://arca.live/b/test/1?x=1"
+    )
+    assert _fixed_arca_url("https://arca.live", "https://evil.example/b/test/1") is None
+    assert _fixed_arca_url("https://arca.live", "https://arca.live:444/b/test/1") is None
+
+
 # ---------- 이미지 수집 ----------
 
 def _collect(img_html: object) -> object:
@@ -123,6 +154,13 @@ def test_collect_skips_emoticon() -> None:
 
 def test_collect_skips_non_namu() -> None:
     assert _collect('<img src="//cdn.other.com/x.png">') == []
+
+
+def test_image_url_validation_accepts_supported_hosts_only() -> None:
+    assert _is_allowed_image_url("https://ac-p1.namu.la/x.png") is True
+    assert _is_allowed_image_url("https://arca.live/x.png") is True
+    assert _is_allowed_image_url("http://ac-p1.namu.la/x.png") is False
+    assert _is_allowed_image_url("https://ac-p1.namu.la:444/x.png") is False
 
 
 def test_collect_dedup_by_clean_url() -> None:
@@ -165,6 +203,19 @@ def test_get_latest_posts_dedups_across_calls(monkeypatch: object) -> None:
     assert {p["post_id"] for p in first} == {"0", "1", "2"}
     # 같은 목록을 다시 크롤 → 이미 본 글이라 없음
     assert c.get_latest_posts(max_posts=10) == []
+
+
+def test_get_latest_posts_allows_same_title_for_different_post_ids(monkeypatch: object) -> None:
+    monkeypatch.setattr("Module.arca_crawler.POST_SKIP_COUNT", 0)
+    rows = "".join(
+        f'<a class="vrow column" href="/b/genshin/{i}">'
+        '<span class="title">같은 제목</span><span class="media-icon"></span></a>'
+        for i in range(2)
+    )
+    base_url = "https://arca.live/b/genshin"
+    c = make_crawler(FakeSession({base_url: rows}))
+
+    assert [post["post_id"] for post in c.get_latest_posts(max_posts=10)] == ["0", "1"]
 
 
 def test_create_session_has_browser_headers(monkeypatch: object) -> None:

@@ -4,6 +4,8 @@ import hashlib
 import io
 import logging
 import math
+import os
+from urllib.parse import unquote, urljoin, urlsplit
 
 import requests
 from bs4 import BeautifulSoup
@@ -192,22 +194,56 @@ class ImageHandler:
 
         return discord_buffer, telegram_buffer, is_gif
 
+    @staticmethod
+    def _is_allowed_dc_image_url(url: str) -> bool:
+        parts = urlsplit(url)
+        hostname = (parts.hostname or "").lower()
+        host_label = hostname.split(".", 1)[0]
+        try:
+            has_custom_port = parts.port is not None
+        except ValueError:
+            return False
+        return (
+            parts.scheme == "https"
+            and parts.username is None
+            and parts.password is None
+            and not has_custom_port
+            and (host_label == "dcimg" or host_label.removeprefix("dcimg").isdigit())
+            and (hostname.endswith(".dcinside.com") or hostname.endswith(".dcinside.co.kr"))
+        )
+
+    @staticmethod
+    def _image_filename(element: object, image_url: str) -> str:
+        label = element.get_text(strip=True) if getattr(element, "get_text", None) else ""
+        filename = os.path.basename(unquote(urlsplit(image_url).path))
+        return (label or filename or "dcinside.jpg")[:255]
+
     def download_images(self, url: object) -> object:
-        """첫 번째 이미지만 메모리로 다운로드하여 리스트로 반환"""
+        """원본 첨부 이미지를 우선하고 본문 이미지로 폴백한다."""
         try:
             headers = {'Referer': url}
             res = self.session.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
             res.raise_for_status()
             soup = BeautifulSoup(res.text, BS_PARSER)
 
-            image_download_contents = soup.select("div.appending_file_box ul li")
-            for li in image_download_contents:
-                img_tag = li.find('a', href=True)
-                if not img_tag:
+            attachment_links = soup.select("div.appending_file_box ul li a[href]")
+            image_elements = [
+                element
+                for element in attachment_links
+                if self._is_allowed_dc_image_url(
+                    urljoin(str(url), element.get("href", ""))
+                )
+            ]
+            if not image_elements:
+                image_elements = soup.select(".writing_view_box img, .write_div img")
+            for element in image_elements:
+                source = element.get("href") or element.get("src") or element.get("data-original")
+                if not source:
                     continue
-
-                img_url = img_tag['href']
-                filename = img_url.split("no=")[2] if "no=" in img_url else img_url.split("/")[-1]
+                img_url = urljoin(str(url), source)
+                if not self._is_allowed_dc_image_url(img_url):
+                    continue
+                filename = self._image_filename(element, img_url)
 
                 response = self.session.get(img_url, headers=headers, timeout=REQUEST_TIMEOUT)
                 response.raise_for_status()
