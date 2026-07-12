@@ -15,6 +15,9 @@ logger = logging.getLogger(__name__)
 
 MAX_CACHE_SIZE = 500
 
+# 최신 일반 게시물은 갤러리 관리자/운영자가 유해 게시물을 먼저 차단할 수 있도록 보류한다.
+POST_SAFETY_SKIP_COUNT = 20
+
 # tr 요소만 파싱하여 파싱 비용 절감
 # (SoupStrainer의 class_ 매칭은 다중 클래스 속성에서 동작하지 않으므로 태그로만 거름)
 _POST_ROW_STRAINER = SoupStrainer("tr")
@@ -42,6 +45,7 @@ class DCInsideCrawler:
             if not posts:
                 return None
 
+            normal_post_count = 0
             for post in posts:
                 try:
                     if post.get("data-type") == "icon_notice":
@@ -55,6 +59,10 @@ class DCInsideCrawler:
                     parts = urlsplit(link)
                     post_ids = parse_qs(parts.query).get("no", [])
                     if parts.hostname != "gall.dcinside.com" or not post_ids:
+                        continue
+
+                    normal_post_count += 1
+                    if normal_post_count <= POST_SAFETY_SKIP_COUNT:
                         continue
 
                     post_id = post_ids[0]
