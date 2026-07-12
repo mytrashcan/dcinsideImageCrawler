@@ -198,11 +198,17 @@ class ImageHandler:
     def _is_allowed_dc_image_url(url: str) -> bool:
         parts = urlsplit(url)
         hostname = (parts.hostname or "").lower()
+        host_label = hostname.split(".", 1)[0]
+        try:
+            has_custom_port = parts.port is not None
+        except ValueError:
+            return False
         return (
             parts.scheme == "https"
             and parts.username is None
             and parts.password is None
-            and hostname.startswith("dcimg")
+            and not has_custom_port
+            and (host_label == "dcimg" or host_label.removeprefix("dcimg").isdigit())
             and (hostname.endswith(".dcinside.com") or hostname.endswith(".dcinside.co.kr"))
         )
 
@@ -221,9 +227,15 @@ class ImageHandler:
             soup = BeautifulSoup(res.text, BS_PARSER)
 
             attachment_links = soup.select("div.appending_file_box ul li a[href]")
-            image_elements = attachment_links or soup.select(
-                ".writing_view_box img, .write_div img"
-            )
+            image_elements = [
+                element
+                for element in attachment_links
+                if self._is_allowed_dc_image_url(
+                    urljoin(str(url), element.get("href", ""))
+                )
+            ]
+            if not image_elements:
+                image_elements = soup.select(".writing_view_box img, .write_div img")
             for element in image_elements:
                 source = element.get("href") or element.get("src") or element.get("data-original")
                 if not source:

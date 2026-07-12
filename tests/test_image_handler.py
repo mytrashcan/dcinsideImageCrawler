@@ -160,18 +160,30 @@ class TestDownloadImages:
         assert images[0][2] == "original.png"
         assert handler.session.get.call_args_list[1].args[0].endswith("original.png")
 
-    def test_rejects_external_attachment_url(self) -> None:
+    def test_external_attachment_falls_back_to_inline_image(self) -> None:
         html = (
             '<div class="appending_file_box"><ul><li>'
             '<a href="https://evil.example/image.png">image.png</a>'
             "</li></ul></div>"
+            '<div class="writing_view_box">'
+            '<img src="https://dcimg8.dcinside.co.kr/fallback.png"></div>'
         )
         handler = self.make_handler(html, make_png_bytes())
 
-        assert handler.download_images(
+        images = handler.download_images(
             "https://gall.dcinside.com/mgallery/board/view/?id=test&no=1"
-        ) is None
-        assert handler.session.get.call_count == 1
+        )
+
+        assert images[0][2] == "fallback.png"
+        assert handler.session.get.call_args_list[1].args[0].endswith("fallback.png")
+
+    def test_rejects_lookalike_host_and_custom_port(self) -> None:
+        assert ImageHandler._is_allowed_dc_image_url(
+            "https://dcimgevil.dcinside.com/image.png"
+        ) is False
+        assert ImageHandler._is_allowed_dc_image_url(
+            "https://dcimg8.dcinside.co.kr:444/image.png"
+        ) is False
 
 
 class TestCompress:
