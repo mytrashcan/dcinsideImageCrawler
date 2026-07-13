@@ -190,7 +190,7 @@ class ArcaBot(discord.Client):
                 logger.warning(f"[아카라이브] 이미지 처리 실패 ({img_info['filename']}): {e}")
                 return None, False
 
-            # CDN rate limit 방지
+            # Hold the semaphore slot briefly after every CDN attempt, including failures.
             finally:
                 await asyncio.sleep(IMAGE_DOWNLOAD_DELAY)
 
@@ -216,7 +216,7 @@ class ArcaBot(discord.Client):
             return None
 
     async def _send_image_batch(self, batch: list[dict[str, object]], title: str,
-                                link: str, batch_index: int) -> object:
+                                link: str, batch_index: int) -> bool:
         """한 배치의 이미지를 Discord embed로 전송한다.
 
         - 첫 번째 embed: title + link 포함
@@ -272,7 +272,7 @@ class ArcaBot(discord.Client):
         await self.media_pipeline.attach_to_web_gallery(data, filename, global_idx, title, link)
 
     async def _send_fallback(self, channel: object, batch: list[dict[str, object]], title: str,
-                              link: str, batch_index: int) -> object:
+                              link: str, batch_index: int) -> bool:
         """413(파일 크기 초과) 발생 시 한 장씩 개별 전송 (재압축 포함)."""
         all_sent = True
         for i, item in enumerate(batch):
