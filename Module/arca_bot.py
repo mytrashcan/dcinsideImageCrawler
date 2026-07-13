@@ -175,10 +175,9 @@ class ArcaBot(discord.Client):
                 content_hash = hashlib.sha256(buffer_data).hexdigest()
                 if self.image_handler.has_seen_hash(content_hash):
                     logger.info(f"[아카라이브] 중복 이미지 스킵: {img_info['filename']}")
-                    await asyncio.sleep(IMAGE_DOWNLOAD_DELAY)
                     return None, True
 
-                result = {
+                return {
                     "discord_buffer": discord_buffer,
                     "telegram_buffer": telegram_buffer,
                     "filename": img_info["filename"],
@@ -186,12 +185,14 @@ class ArcaBot(discord.Client):
                     "original_data": buffer_data,
                     "content_hash": content_hash,
                     "validated": True,
-                }
-                await asyncio.sleep(IMAGE_DOWNLOAD_DELAY)
-                return result, True
+                }, True
             except (OSError, ValueError) as e:
                 logger.warning(f"[아카라이브] 이미지 처리 실패 ({img_info['filename']}): {e}")
                 return None, False
+
+            # Hold the semaphore slot briefly after every CDN attempt, including failures.
+            finally:
+                await asyncio.sleep(IMAGE_DOWNLOAD_DELAY)
 
     def _download_single_image(self, img_url: str, referer: str) -> bytes | None:
         """단일 이미지 URL을 메모리로 다운로드.

@@ -201,6 +201,21 @@ async def test_download_single_image_failure(mock_dependencies, bot):
 
 
 @pytest.mark.asyncio
+async def test_download_attempt_waits_after_failure(bot):
+    """A fast CDN failure still occupies its rate-limited download slot."""
+    bot._download_single_image = MagicMock(return_value=None)
+
+    with patch("Module.arca_bot.asyncio.sleep", AsyncMock()) as mock_sleep:
+        result = await bot._download_and_process_one(
+            {"url": "https://img.example.com/fail.jpg", "filename": "fail.jpg"},
+            "https://arca.live/b/test/1",
+        )
+
+    assert result == (None, False)
+    mock_sleep.assert_awaited_once_with(0.5)
+
+
+@pytest.mark.asyncio
 async def test_failed_post_delivery_is_not_acknowledged(mock_dependencies, bot):
     crawler_mock, _, _ = mock_dependencies
     post = {"title": "retry", "link": "https://arca.live/b/test/12", "post_id": "12"}
