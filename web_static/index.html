@@ -5,11 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>자짤 갤러리 · dcselfie</title>
 
-  <!-- 외부 스크립트(광고·분석·봇차단) 연결을 미리 시작해 초기 로딩 단축 -->
-  <link rel="preconnect" href="https://pagead2.googlesyndication.com" crossorigin />
+  <!-- 외부 분석·봇차단 스크립트 연결을 미리 시작해 초기 로딩 단축 -->
   <link rel="preconnect" href="https://www.googletagmanager.com" />
   <link rel="preconnect" href="https://challenges.cloudflare.com" />
-  <link rel="preconnect" href="//t1.kakaocdn.net" crossorigin />
 
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
@@ -45,16 +43,8 @@
     gtag('config', 'G-CTFS40BCB7');
   </script>
 
-  <!-- Google AdSense -->
-  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4317936564749286"
-          crossorigin="anonymous"></script>
-  <meta name="google-adsense-account" content="ca-pub-4317936564749286" />
-
   <!-- Cloudflare Turnstile -->
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
-
-  <!-- Kakao AdFit -->
-  <script type="text/javascript" src="//t1.kakaocdn.net/kas/static/ba.min.js" async></script>
   <style>
     * { box-sizing: border-box; }
     /* prepend는 대기열(새 자짤 버튼)로만 일어나므로 브라우저 스크롤 앵커링이 불필요하고,
@@ -366,13 +356,6 @@
   </header>
   <button id="newItemsBtn" hidden>새 자짤 0개 ↑</button>
   <main id="gallery" class="masonry"></main>
-
-  <div style="display:flex;justify-content:center;padding:8px 24px 16px">
-    <ins class="kakao_ad_area" style="display:none;"
-         data-ad-unit="DAN-029QuS7QZOLFJ0nJ"
-         data-ad-width="300"
-         data-ad-height="250"></ins>
-  </div>
 
   <footer>
     <a href="/request">갤러리 추가 요청</a>

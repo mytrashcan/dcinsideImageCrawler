@@ -29,7 +29,7 @@ Both crawlers share the same image pipeline (`ImageHandler` for compression/dedu
 - Fast HTML parsing via `lxml` + `SoupStrainer` (falls back to `html.parser` if lxml is unavailable)
 - Config-driven gallery management via `galleries.json` - no code changes needed to add new galleries
 - Optional **RAM-only ephemeral web gallery** - serves collected images in a near real-time, Pinterest-style masonry feed (titles link to the source post) with no persistent image storage
-  - Installable as a PWA, ships `sitemap.xml`/`robots.txt`/`security.txt`, optional Cloudflare Turnstile bot gate and AdSense hooks
+  - Installable as a PWA, ships `sitemap.xml`/`robots.txt`/`security.txt`, with an optional Cloudflare Turnstile bot gate
 - Duplicate image detection via SHA256 hashing
 - Stable post-ID deduplication and strict source/CDN URL validation
 - Moderation safety windows before newly published posts become eligible for crawling

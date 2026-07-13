@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -279,6 +280,26 @@ def test_security_headers_present(monkeypatch, tmp_path):
     assert response.headers["x-frame-options"] == "DENY"
     assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
     assert "max-age=" in response.headers["strict-transport-security"]
+
+
+def test_static_pages_do_not_include_ad_network_hooks():
+    static_dir = Path(web_app.__file__).parent / "web_static"
+    rejected_markers = (
+        "adsbygoogle",
+        "google-adsense-account",
+        "pagead2.googlesyndication.com",
+        "kakao_ad_area",
+        "t1.kakaocdn.net",
+        "data-ad-unit",
+    )
+
+    for page in static_dir.glob("*.html"):
+        html = page.read_text(encoding="utf-8").lower()
+        assert not any(marker in html for marker in rejected_markers), page.name
+
+    assert not (static_dir / "ads.txt").exists()
+    app_paths = {route.path for route in create_app(make_store()).routes}
+    assert "/ads.txt" not in app_paths
 
 
 def animated_gif_bytes(size=(64, 64), frames=3) -> bytes:
