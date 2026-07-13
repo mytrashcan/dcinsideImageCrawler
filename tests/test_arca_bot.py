@@ -11,6 +11,7 @@ import discord
 import pytest
 
 from Module.arca_bot import ArcaBot
+from Module.media_download import MediaDownloadTooLarge
 
 
 @pytest.fixture
@@ -118,9 +119,36 @@ async def test_process_post_no_images(mock_dependencies, bot):
     crawler_mock.extract_all_images.return_value = []
 
     post = {"title": "No Img", "link": "https://arca.live/b/test/2"}
-    await bot.process_post(post)
+    result = await bot.process_post(post)
 
     crawler_mock.extract_all_images.assert_called_once()
+    assert result is True
+
+
+@pytest.mark.asyncio
+async def test_concurrent_download_results_are_deduplicated_within_post(bot):
+    first = {
+        "discord_buffer": MagicMock(),
+        "telegram_buffer": MagicMock(),
+        "filename": "first.jpg",
+        "is_gif": False,
+        "content_hash": "same-hash",
+    }
+    duplicate = {**first, "filename": "duplicate.jpg"}
+    bot._download_and_process_one = AsyncMock(
+        side_effect=[(first, True), (duplicate, True)]
+    )
+
+    downloaded, all_resolved = await bot._download_and_process(
+        [
+            {"url": "https://img.example.com/1.jpg", "filename": "first.jpg"},
+            {"url": "https://img.example.com/2.jpg", "filename": "duplicate.jpg"},
+        ],
+        "https://arca.live/b/test/1",
+    )
+
+    assert downloaded == [first]
+    assert all_resolved is True
 
 
 @pytest.mark.asyncio
@@ -213,6 +241,21 @@ async def test_download_attempt_waits_after_failure(bot):
 
     assert result == (None, False)
     mock_sleep.assert_awaited_once_with(0.5)
+
+
+@pytest.mark.asyncio
+async def test_permanently_rejected_download_is_resolved(bot):
+    bot._download_single_image = MagicMock(
+        side_effect=MediaDownloadTooLarge("too large")
+    )
+
+    with patch("Module.arca_bot.asyncio.sleep", AsyncMock()):
+        result = await bot._download_and_process_one(
+            {"url": "https://img.example.com/large.jpg", "filename": "large.jpg"},
+            "https://arca.live/b/test/1",
+        )
+
+    assert result == (None, True)
 
 
 @pytest.mark.asyncio

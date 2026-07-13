@@ -15,7 +15,7 @@ from PIL import Image
 
 from Module.config import BS_PARSER, DISCORD_MAX_SIZE, HEADERS, REQUEST_TIMEOUT, app_config
 from Module.lru_cache import LRUCache
-from Module.media_download import MediaDownloadTooLarge, download_limited
+from Module.media_download import MediaDownloadRejected, download_limited
 
 logger = logging.getLogger(__name__)
 
@@ -328,6 +328,6 @@ class ImageHandler:
         except requests.RequestException as e:
             logger.error(f"이미지 다운로드 실패: {e}")
             return None
-        except MediaDownloadTooLarge:
-            logger.warning("이미지가 다운로드 제한을 초과합니다: %s", url)
-            return None
+        except MediaDownloadRejected as exc:
+            logger.warning("이미지가 영구적으로 거절되어 건너뜁니다: %s", type(exc).__name__)
+            return []
