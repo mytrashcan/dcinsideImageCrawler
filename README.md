@@ -250,7 +250,7 @@ The web service reads the project's `.env` through `EnvironmentFile`, so `WEB_IN
 Secrets (`DISCORD_TOKEN`, `ARCA_SOCKS_PROXY`, etc.) go in the project's `.env`, never in the unit files - see the warning in "Arcalive: Cloudflare bypass" above.
 
 Notes for small instances (1 GB RAM free tier):
-- The launcher runs up to `MAX_PROCESSES` (default 5) Python processes at once; each loads discord.py and Pillow. Lower `MAX_PROCESSES` in `launcher.py` if memory is tight.
+- The launcher has independent DCInside and Arcalive budgets (up to 5 each), so it can run 10 Python processes in total. Lower `MAX_DC_CRAWLERS` and `MAX_ARCA_CRAWLERS` if memory is tight; each process loads discord.py and Pillow.
 - Make sure `lxml` installed successfully (`pip show lxml`) — it noticeably reduces CPU time per crawl cycle.
 
 ## Project Structure
@@ -291,8 +291,9 @@ Notes for small instances (1 GB RAM free tier):
 | Setting | Location | Default | Description |
 |---------|----------|---------|-------------|
 | `DISCORD_MAX_SIZE_MB` | `.env` | 10 MB | Discord upload limit (raise for boosted servers) |
-| `MAX_PROCESSES` | `launcher.py` | 5 | Max concurrent gallery processes |
-| `MAX_PROCESS_LIFETIME` | `launcher.py` | 3600s | Process restart interval |
+| `MAX_DC_CRAWLERS` | env | 5 (hard max 5) | Independent DCInside crawler concurrency budget |
+| `MAX_ARCA_CRAWLERS` | env | 5 (hard max 5) | Independent Arcalive crawler concurrency budget |
+| `CRAWLER_BATCH_SECONDS` | env | 3600s | Rotation interval when a platform has more galleries than its limit |
 | `REQUEST_TIMEOUT` | `Module/config.py` | 15s | HTTP request timeout |
 | Crawl interval | `Module/dcbot.py` | 20-40s | Random delay between crawls |
 | Arca crawl interval | `Module/arca_bot.py` | 30-60s | Random delay between arcalive crawls |
@@ -302,8 +303,9 @@ Notes for small instances (1 GB RAM free tier):
 | `WEB_IMAGE_TTL_SECONDS` | env | 10800 (3h) | How long an image stays in memory |
 | `WEB_FEED_MAX_ITEMS` | env | 120 | Maximum in-memory feed items |
 | `WEB_MEMORY_MAX_MB` | env | 256 | Hard cap for original and thumbnail bytes |
-| `WEB_IMAGE_MAX_MB` | env | 4 | Per-image cap after web compression |
+| `WEB_IMAGE_MAX_MB` | env | 12 | Per-image RAM cap; originals within the cap stay untouched |
 | `WEB_INGEST_MAX_MB` | env | 12 | Maximum localhost upload body |
+| `WEB_UPLOAD_QUEUE_SIZE` | env | 20 | Per-crawler bounded background queue for web uploads |
 | `WEB_FRESHNESS_SECONDS` | env | 900 | Age threshold reported by `/healthz` |
 | `WEB_INGEST_TOKEN` | `.env` | required | Shared secret for crawler-to-web ingestion |
 | `WEB_GALLERY_URL` | env | `http://127.0.0.1:8000` | Internal web-gallery origin |
@@ -311,6 +313,9 @@ Notes for small instances (1 GB RAM free tier):
 | `WEB_THUMB_WIDTH` | env | 480 | In-memory card-thumbnail width (`0` disables) |
 | `WEB_MAINTENANCE` | env | unset | Set to `1` to force the maintenance page (`503`). A `.maintenance` flag file next to the project (toggled by `./dcselfie.sh down` / `up`, no restart needed) has the same effect |
 | `ARCA_SOCKS_PROXY` | `.env` (never commit) | unset | `socks5://...` proxy the Arcalive crawler routes through - see "Arcalive Cloudflare bypass" below |
+| `ARCA_DOWNLOAD_CONCURRENCY` | env | 2 | Bounded concurrent Arcalive CDN downloads per crawler |
+| `MEDIA_DOWNLOAD_MAX_MB` | env | 15 | Hard streaming limit for each source image download |
+| `MEDIA_MAX_PIXELS` | env | 24000000 | Pixel-count limit checked before image processing |
 | `TURNSTILE_SITEKEY` / `TURNSTILE_SECRET` | `.env` (never commit) | unset | Cloudflare Turnstile bot gate for the web gallery; unset disables it entirely |
 
 ## Development

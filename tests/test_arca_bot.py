@@ -94,12 +94,12 @@ async def test_process_post_with_images(mock_dependencies, bot):
     ]
     # Mock _download_and_process to return processed items
     bot._download_and_process = AsyncMock(
-        return_value=[
+        return_value=([
             {"discord_buffer": MagicMock(), "telegram_buffer": MagicMock(),
-             "filename": "1.jpg", "is_gif": False},
+             "filename": "1.jpg", "is_gif": False, "content_hash": "h1"},
             {"discord_buffer": MagicMock(), "telegram_buffer": MagicMock(),
-             "filename": "2.jpg", "is_gif": False},
-        ]
+             "filename": "2.jpg", "is_gif": False, "content_hash": "h2"},
+        ], True)
     )
     bot._send_image_batch = AsyncMock()
 
@@ -144,8 +144,8 @@ async def test_start_crawling_processes_posts(mock_dependencies, bot):
     """start_crawling calls process_post for each new post returned."""
     crawler_mock, _, _ = mock_dependencies
     posts = [
-        {"title": "Post 1", "link": "https://arca.live/b/test/10"},
-        {"title": "Post 2", "link": "https://arca.live/b/test/11"},
+        {"title": "Post 1", "link": "https://arca.live/b/test/10", "post_id": "10"},
+        {"title": "Post 2", "link": "https://arca.live/b/test/11", "post_id": "11"},
     ]
     crawler_mock.get_latest_posts.side_effect = [posts, posts, posts]
 
@@ -166,6 +166,8 @@ async def test_download_single_image_success(mock_dependencies, bot):
 
     resp = MagicMock()
     resp.content = b"fake-image-bytes"
+    resp.headers = {"content-length": str(len(resp.content))}
+    resp.iter_content.return_value = [resp.content]
     resp.raise_for_status.return_value = None
 
     with patch("Module.arca_bot.requests.get", return_value=resp) as mock_get:
@@ -178,6 +180,7 @@ async def test_download_single_image_success(mock_dependencies, bot):
         "https://img.example.com/1.jpg",
         headers={"Referer": "https://arca.live/b/test/1"},
         timeout=15,
+        stream=True,
     )
 
 
@@ -195,3 +198,17 @@ async def test_download_single_image_failure(mock_dependencies, bot):
         )
 
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_failed_post_delivery_is_not_acknowledged(mock_dependencies, bot):
+    crawler_mock, _, _ = mock_dependencies
+    post = {"title": "retry", "link": "https://arca.live/b/test/12", "post_id": "12"}
+    crawler_mock.get_latest_posts.return_value = [post]
+    bot.process_post = AsyncMock(return_value=False)
+
+    with patch("asyncio.sleep", AsyncMock()):
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(bot.start_crawling(), timeout=0.05)
+
+    crawler_mock.mark_sent.assert_not_called()

@@ -1,5 +1,6 @@
 import io
 from contextlib import nullcontext
+from unittest.mock import MagicMock
 
 import launcher
 
@@ -47,3 +48,50 @@ def test_wait_for_web_gallery_fails_on_token_mismatch(monkeypatch):
     monkeypatch.setattr("launcher.time.monotonic", lambda: next(ticks))
 
     assert launcher.wait_for_web_gallery() is False
+
+
+def test_platform_limits_are_independent_and_capped_at_five():
+    assert 1 <= launcher.MAX_DC <= 5
+    assert 1 <= launcher.MAX_ARCA <= 5
+
+
+def test_monitor_batch_restarts_only_crashed_process(monkeypatch):
+    healthy = MagicMock()
+    healthy.poll.return_value = None
+    crashed = MagicMock()
+    crashed.poll.return_value = 1
+    restarted = MagicMock()
+    restarted.poll.return_value = None
+    launcher.processes.clear()
+    launcher.processes.update({"dc-a": (healthy, 1.0), "dc-b": (crashed, 1.0)})
+    monkeypatch.setattr("launcher.time.monotonic", lambda: 100.0)
+    monkeypatch.setattr("launcher.time.time", lambda: 100.0)
+    monkeypatch.setattr("launcher.run_script", MagicMock(return_value=restarted))
+
+    launcher.monitor_batch({"dc-a", "dc-b"})
+
+    assert launcher.processes["dc-a"][0] is healthy
+    assert len(launcher.processes["dc-b"]) == 3
+
+    monkeypatch.setattr("launcher.time.monotonic", lambda: 103.0)
+    launcher.monitor_batch({"dc-a", "dc-b"})
+    assert launcher.processes["dc-b"][0] is restarted
+    launcher.processes.clear()
+
+
+def test_stopping_dc_batch_does_not_stop_arca(monkeypatch):
+    dc = MagicMock()
+    dc.poll.side_effect = [None, 0]
+    arca = MagicMock()
+    arca.poll.return_value = None
+    launcher.processes.clear()
+    launcher.processes.update({"dc": (dc, 1.0), "arca": (arca, 1.0)})
+    monkeypatch.setattr("launcher.time.monotonic", lambda: 1.0)
+
+    launcher.stop_processes({"dc"}, timeout=0)
+
+    dc.terminate.assert_called_once()
+    arca.terminate.assert_not_called()
+    assert "dc" not in launcher.processes
+    assert "arca" in launcher.processes
+    launcher.processes.clear()

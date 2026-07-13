@@ -34,6 +34,7 @@ class GalleryClient:
         self.token = token if token is not None else app_config.web_ingest_token
         self.max_attempts = max(1, max_attempts)
         self.retry_delay_seconds = max(0.0, retry_delay_seconds)
+        self.session = requests.Session()
 
     def publish(
         self,
@@ -50,7 +51,7 @@ class GalleryClient:
             return {}
         for attempt in range(1, self.max_attempts + 1):
             try:
-                response = requests.post(
+                response = self.session.post(
                     f"{self.base_url}/internal/images",
                     params={
                         "filename": filename or "",
@@ -69,6 +70,11 @@ class GalleryClient:
                 return response.json()
             except (requests.RequestException, ValueError) as exc:
                 error_label = _safe_error_label(exc)
+                response = getattr(exc, "response", None)
+                status = getattr(response, "status_code", None)
+                if status is not None and 400 <= status < 500 and status not in {408, 429}:
+                    logger.warning("웹 갤러리 전송 거절 (error=%s)", error_label)
+                    return {}
                 if attempt == self.max_attempts:
                     logger.warning(
                         "웹 갤러리 전송 실패 (attempts=%s, error=%s)",
@@ -87,6 +93,9 @@ class GalleryClient:
 
     async def publish_async(self, *args, **kwargs) -> dict:
         return await asyncio.to_thread(self.publish, *args, **kwargs)
+
+    def close(self) -> None:
+        self.session.close()
 
 
 def attach_web_gallery(message_sender, gallery: str = "", client: GalleryClient | None = None) -> None:

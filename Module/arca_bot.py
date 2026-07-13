@@ -5,7 +5,7 @@ Gallery Image Relay의 dcbot.py와 차이점:
 - 게시글 내 모든 이미지를 추출하여 전송 (DCInside: 최상단 1개)
 - Telegram 전송 없음 (순수 Discord 전용)
 - 멀티 임베드 메시지 (한 게시글 여러 이미지를 하나의 메시지로)
-- 모든 이미지 처리는 인메모리(BytesIO)로 수행되며, WEB_GALLERY=1 일 때만 공유 웹 갤러리용으로 디스크에 기록됨
+- 모든 이미지는 인메모리(BytesIO)로 처리되고 웹 갤러리도 RAM에만 보관됨
 """
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from Module.arca_crawler import ArcaliveCrawler
 from Module.config import app_config
 from Module.embeds import make_image_embed
 from Module.image_handler import ImageHandler
+from Module.media_download import MediaDownloadTooLarge, download_limited
 from Module.media_pipeline import MediaPipeline
 from Module.message_sender import MessageSender
 
@@ -71,6 +72,9 @@ class ArcaBot(discord.Client):
             telegram_enabled=False,
         )
         self._crawler_task: asyncio.Task | None = None
+        self._download_semaphore = asyncio.Semaphore(
+            max(1, min(4, app_config.arca_download_concurrency))
+        )
 
     async def on_ready(self) -> object:
         logger.info(f"[아카라이브] Logged in as {self.user}")
@@ -87,6 +91,7 @@ class ArcaBot(discord.Client):
         if self._crawler_task is not None:
             self._crawler_task.cancel()
             await asyncio.gather(self._crawler_task, return_exceptions=True)
+        await self.media_pipeline.close()
         await super().close()
 
     async def start_crawling(self) -> object:
@@ -96,7 +101,8 @@ class ArcaBot(discord.Client):
                 posts = await asyncio.to_thread(self.crawler.get_latest_posts)
                 for post in posts:
                     logger.info(f"[아카라이브] 새 게시글: {post['title']} ({post['link']})")
-                    await self.process_post(post)
+                    if await self.process_post(post):
+                        self.crawler.mark_sent(post["post_id"])
             except discord.ConnectionClosed:
                 logger.warning("[아카라이브] Discord 연결 끊김. 재연결 대기...")
                 await asyncio.sleep(5)
@@ -111,7 +117,7 @@ class ArcaBot(discord.Client):
         images = await asyncio.to_thread(self.crawler.extract_all_images, post["link"])
         if not images:
             logger.info(f"[아카라이브] 이미지 없음: {post['title']}")
-            return
+            return False
 
         # 게시글당 최대 이미지 수 제한
         if len(images) > MAX_IMAGES_PER_POST:
@@ -122,53 +128,71 @@ class ArcaBot(discord.Client):
         link = post["link"]
         logger.info(f"[아카라이브] {title}: {len(images)}개 이미지 추출됨")
 
-        downloaded = await self._download_and_process(images, link)
+        downloaded, all_resolved = await self._download_and_process(images, link)
         if not downloaded:
             logger.info(f"[아카라이브] 다운로드 성공한 이미지 없음: {title}")
-            return
+            return all_resolved
 
         # 배치 처리: MAX_EMBEDS_PER_MSG개씩 나눠서 전송
+        sent = False
         for batch_start in range(0, len(downloaded), MAX_EMBEDS_PER_MSG):
             batch = downloaded[batch_start : batch_start + MAX_EMBEDS_PER_MSG]
-            await self._send_image_batch(batch, title, link, batch_start)
+            batch_sent = await self._send_image_batch(batch, title, link, batch_start)
+            if batch_sent:
+                for item in batch:
+                    self.image_handler.mark_hash_sent(item["content_hash"])
+            sent = batch_sent or sent
+        return sent and all_resolved
 
     async def _download_and_process(
         self, images: list[dict[str, object]], link: str
-    ) -> list[dict[str, object]]:
+    ) -> tuple[list[dict[str, object]], bool]:
         """이미지 URL 목록을 다운로드→압축→중복제거하여 전송 가능한 버퍼 목록으로 만든다."""
-        downloaded = []
-        for img_info in images:
+        results = await asyncio.gather(
+            *(self._download_and_process_one(img_info, link) for img_info in images)
+        )
+        return [item for item, _ in results if item is not None], all(
+            resolved for _, resolved in results
+        )
+
+    async def _download_and_process_one(
+        self, img_info: dict[str, object], link: str
+    ) -> tuple[dict[str, object] | None, bool]:
+        async with self._download_semaphore:
             try:
                 buffer_data = await asyncio.to_thread(
                     self._download_single_image, img_info["url"], link
                 )
                 if not buffer_data:
-                    continue
+                    return None, False
 
                 # 내용 기반 중복 제거 — process_image 성공 후에 체크 (실패 시 영구 스킵 방지)
                 discord_buffer, telegram_buffer, is_gif = await asyncio.to_thread(
-                    self.image_handler.process_image,
+                    self.image_handler.prepare_image,
                     buffer_data, img_info["filename"],
                 )
 
                 content_hash = hashlib.sha256(buffer_data).hexdigest()
-                if self.image_handler.is_duplicate(content_hash):
+                if self.image_handler.has_seen_hash(content_hash):
                     logger.info(f"[아카라이브] 중복 이미지 스킵: {img_info['filename']}")
-                    continue
+                    return None, True
 
-                downloaded.append({
+                return {
                     "discord_buffer": discord_buffer,
                     "telegram_buffer": telegram_buffer,
                     "filename": img_info["filename"],
                     "is_gif": is_gif,
-                })
+                    "original_data": buffer_data,
+                    "content_hash": content_hash,
+                    "validated": True,
+                }, True
             except (OSError, ValueError) as e:
                 logger.warning(f"[아카라이브] 이미지 처리 실패 ({img_info['filename']}): {e}")
-                continue
+                return None, False
 
             # CDN rate limit 방지
-            await asyncio.sleep(IMAGE_DOWNLOAD_DELAY)
-        return downloaded
+            finally:
+                await asyncio.sleep(IMAGE_DOWNLOAD_DELAY)
 
     def _download_single_image(self, img_url: str, referer: str) -> bytes | None:
         """단일 이미지 URL을 메모리로 다운로드.
@@ -177,9 +201,16 @@ class ArcaBot(discord.Client):
         """
         headers = {"Referer": referer}
         try:
-            resp = requests.get(img_url, headers=headers, timeout=15)
-            resp.raise_for_status()
-            return resp.content
+            return download_limited(
+                requests,
+                img_url,
+                headers=headers,
+                timeout=15,
+                max_bytes=app_config.media_download_max_mb * 1024 * 1024,
+            )
+        except MediaDownloadTooLarge:
+            logger.warning("이미지가 다운로드 제한을 초과함: %s", img_url)
+            return None
         except requests.RequestException as e:
             logger.warning(f"이미지 다운로드 실패 ({img_url}): {e}")
             return None
@@ -195,7 +226,7 @@ class ArcaBot(discord.Client):
         gallery_snapshot = None
         if self.web_gallery_enabled:
             gallery_snapshot = [
-                (item["discord_buffer"].getvalue(), item["filename"])
+                (self.media_pipeline._web_image_data(item), item["filename"])
                 for item in batch
             ]
 
@@ -230,6 +261,7 @@ class ArcaBot(discord.Client):
         # 배치 간 딜레이 (rate limit 방지)
         if batch_index > 0:
             await asyncio.sleep(INTER_IMAGE_DELAY)
+        return sent_ok
 
     async def _save_to_web_gallery(self, data: bytes, filename: str,
                                    global_idx: int, title: str, link: str) -> object:
@@ -242,6 +274,7 @@ class ArcaBot(discord.Client):
     async def _send_fallback(self, channel: object, batch: list[dict[str, object]], title: str,
                               link: str, batch_index: int) -> object:
         """413(파일 크기 초과) 발생 시 한 장씩 개별 전송 (재압축 포함)."""
+        all_sent = True
         for i, item in enumerate(batch):
             global_idx = batch_index + i
             item["discord_buffer"].seek(0)
@@ -261,6 +294,7 @@ class ArcaBot(discord.Client):
                     file=discord.File(buffer, filename=filename),
                     embed=embed,
                 )
+                self.image_handler.mark_hash_sent(item["content_hash"])
                 await self._save_to_web_gallery(data, filename, global_idx, title, link)
             except discord.HTTPException as e2:
                 if e2.status == 413:
@@ -273,15 +307,26 @@ class ArcaBot(discord.Client):
                     if recompressed:
                         embed = make_image_embed(filename, color=ARCA_EMBED_COLOR)
                         data = recompressed.getvalue()
-                        await channel.send(
-                            file=discord.File(recompressed, filename=filename),
-                            embed=embed,
-                        )
-                        await self._save_to_web_gallery(data, filename, global_idx, title, link)
+                        try:
+                            await channel.send(
+                                file=discord.File(recompressed, filename=filename),
+                                embed=embed,
+                            )
+                            self.image_handler.mark_hash_sent(item["content_hash"])
+                            await self._save_to_web_gallery(
+                                data, filename, global_idx, title, link
+                            )
+                        except discord.HTTPException as retry_error:
+                            all_sent = False
+                            logger.error("아카라이브 fallback 재시도 실패: %s", retry_error)
+                    else:
+                        all_sent = False
                 else:
                     logger.error(f"[아카라이브] fallback 전송 실패: {e2}")
+                    all_sent = False
 
             await asyncio.sleep(0.5)
+        return all_sent
 
     async def run_bot(self) -> object:
         async with self:

@@ -83,13 +83,13 @@ class MessageSender:
         buffer.seek(0)
         return buffer
 
-    async def send_to_discord(self, channel: object, title: object, image_buffer: object, filename: object, url: object=None) -> object:
+    async def send_to_discord(self, channel: object, title: object, image_buffer: object, filename: object, url: object=None, *, validated: bool=False) -> object:
         """디스코드로 이미지 전송 (413 시 재압축 후 1회 재시도)
 
         url이 주어지면 임베드 제목이 해당 게시글로 가는 하이퍼링크가 된다.
         """
         try:
-            if not self.validate_image_buffer(image_buffer):
+            if not validated and not await asyncio.to_thread(self.validate_image_buffer, image_buffer):
                 logger.error("Discord 전송 취소: 이미지 검증 실패")
                 return False
 
@@ -132,13 +132,13 @@ class MessageSender:
             except (OSError, ValueError):
                 pass
 
-    async def send_to_telegram(self, image_buffer: object, filename: object=None, is_gif: object=False, max_retries: object=3) -> object:
+    async def send_to_telegram(self, image_buffer: object, filename: object=None, is_gif: object=False, max_retries: object=3, *, validated: bool=False) -> object:
         """텔레그램으로 이미지 전송 (GIF는 animation으로, 재시도 포함)"""
         if self.telegram_bot is None:
             logger.debug("Telegram 봇이 설정되지 않음 — 전송 건너뜀")
             return False
 
-        if not self.validate_image_buffer(image_buffer):
+        if not validated and not await asyncio.to_thread(self.validate_image_buffer, image_buffer):
             logger.error("Telegram 전송 취소: 이미지 검증 실패")
             return False
 

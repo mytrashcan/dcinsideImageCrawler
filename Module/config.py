@@ -38,8 +38,9 @@ class AppConfig:
     web_feed_max_items: int = 120
     web_thumb_width: int = 480
     web_memory_max_mb: int = 256
-    web_image_max_mb: int = 4
+    web_image_max_mb: int = 12
     web_ingest_max_mb: int = 12
+    web_upload_queue_size: int = 20
     web_freshness_seconds: int = 900
     web_gallery_url: str = "http://127.0.0.1:8000"
     web_ingest_token: str = ""
@@ -53,6 +54,11 @@ class AppConfig:
 
     # Arca (SOCKS proxy for arcalive crawler)
     arca_socks_proxy: str = ""
+    arca_download_concurrency: int = 2
+
+    # Source media safety limits. Originals within these bounds remain untouched.
+    media_download_max_mb: int = 15
+    media_max_pixels: int = 24_000_000
 
     # Dashboard
     dash_host: str = "127.0.0.1"
@@ -80,8 +86,9 @@ class AppConfig:
             web_feed_max_items=int(os.getenv("WEB_FEED_MAX_ITEMS", "120")),
             web_thumb_width=int(os.getenv("WEB_THUMB_WIDTH", "480")),
             web_memory_max_mb=int(os.getenv("WEB_MEMORY_MAX_MB", "256")),
-            web_image_max_mb=int(os.getenv("WEB_IMAGE_MAX_MB", "4")),
+            web_image_max_mb=int(os.getenv("WEB_IMAGE_MAX_MB", "12")),
             web_ingest_max_mb=int(os.getenv("WEB_INGEST_MAX_MB", "12")),
+            web_upload_queue_size=int(os.getenv("WEB_UPLOAD_QUEUE_SIZE", "20")),
             web_freshness_seconds=int(os.getenv("WEB_FRESHNESS_SECONDS", "900")),
             web_gallery_url=os.getenv("WEB_GALLERY_URL", "http://127.0.0.1:8000"),
             web_ingest_token=os.getenv("WEB_INGEST_TOKEN", ""),
@@ -91,6 +98,9 @@ class AppConfig:
             turnstile_sitekey=os.getenv("TURNSTILE_SITEKEY", ""),
             turnstile_secret=os.getenv("TURNSTILE_SECRET", ""),
             arca_socks_proxy=os.getenv("ARCA_SOCKS_PROXY", ""),
+            arca_download_concurrency=int(os.getenv("ARCA_DOWNLOAD_CONCURRENCY", "2")),
+            media_download_max_mb=int(os.getenv("MEDIA_DOWNLOAD_MAX_MB", "15")),
+            media_max_pixels=int(os.getenv("MEDIA_MAX_PIXELS", "24000000")),
             dash_host=os.getenv("DASH_HOST", "127.0.0.1"),
             dash_base_url=os.getenv("DASH_BASE_URL", "").strip().rstrip("/"),
         )

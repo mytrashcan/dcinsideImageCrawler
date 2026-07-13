@@ -100,6 +100,7 @@ class TestGetLatestPost:
         crawler = make_crawler(make_list_html(rows))
 
         first = crawler.get_latest_post()
+        crawler.mark_sent(first["post_id"])
         second = crawler.get_latest_post()
 
         assert first["post_id"] == "20"

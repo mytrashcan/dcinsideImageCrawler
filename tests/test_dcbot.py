@@ -87,7 +87,7 @@ async def test_process_post_with_images(mock_dependencies, bot):
     """process_post downloads images and calls send_to_discord + send_to_telegram."""
     _, image_handler_mock = mock_dependencies
     image_handler_mock.download_images.return_value = [
-        (MagicMock(), MagicMock(), "photo.png", False),
+        (MagicMock(), MagicMock(), "photo.png", False, b"original", "hash"),
     ]
 
     post = {"title": "Test Post", "link": "https://example.com/post/1", "has_image": True}
@@ -96,6 +96,7 @@ async def test_process_post_with_images(mock_dependencies, bot):
     image_handler_mock.download_images.assert_called_once_with(post["link"])
     bot.message_sender.send_to_discord.assert_called()
     bot.message_sender.send_to_telegram.assert_called_once()
+    image_handler_mock.mark_hash_sent.assert_called_once_with("hash")
 
 
 @pytest.mark.asyncio
@@ -134,11 +135,16 @@ async def test_start_crawling_processes_post_with_image(mock_dependencies, bot):
     """start_crawling calls process_post when get_latest_post returns an image post."""
     crawler_mock, image_handler_mock = mock_dependencies
 
-    post = {"title": "Gallery Post", "link": "https://example.com/post/3", "has_image": True}
+    post = {
+        "title": "Gallery Post",
+        "link": "https://example.com/post/3",
+        "post_id": "3",
+        "has_image": True,
+    }
     crawler_mock.get_latest_post.side_effect = [post, post, post]
 
     image_handler_mock.download_images.return_value = [
-        (MagicMock(), MagicMock(), "img.png", False),
+        (MagicMock(), MagicMock(), "img.png", False, b"original", "hash"),
     ]
 
     with patch("asyncio.sleep", AsyncMock()):
@@ -147,3 +153,46 @@ async def test_start_crawling_processes_post_with_image(mock_dependencies, bot):
 
     image_handler_mock.download_images.assert_called_with(post["link"])
     bot.message_sender.send_to_discord.assert_called()
+    crawler_mock.mark_sent.assert_called_with("3")
+
+
+@pytest.mark.asyncio
+async def test_cache_command_only_leader_sends_ack(mock_dependencies, bot):
+    _, image_handler_mock = mock_dependencies
+    bot._command_leader.is_leader = False
+    bot._command_leader.try_acquire = MagicMock(return_value=False)
+    message = MagicMock()
+    message.author = object()
+    message.content = "!쓰담쓰담"
+    message.channel.send = AsyncMock()
+
+    await bot.on_message(message)
+
+    image_handler_mock.clear_seen_hashes.assert_called_once()
+    message.channel.send.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_failed_delivery_is_not_acknowledged(mock_dependencies, bot):
+    crawler_mock, _ = mock_dependencies
+    post = {"title": "retry", "link": "https://example.com/4", "post_id": "4", "has_image": True}
+    crawler_mock.get_latest_post.return_value = post
+    bot.process_post = AsyncMock(return_value=False)
+
+    with patch("asyncio.sleep", AsyncMock()):
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(bot.start_crawling(), timeout=0.05)
+
+    crawler_mock.mark_sent.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_failed_distribution_does_not_acknowledge_image_hash(mock_dependencies, bot):
+    _, image_handler_mock = mock_dependencies
+    image_handler_mock.download_images.return_value = [
+        (MagicMock(), MagicMock(), "img.png", False, b"original", "hash"),
+    ]
+    bot.media_pipeline.distribute = AsyncMock(return_value=False)
+
+    assert await bot.process_post({"title": "x", "link": "https://example.com"}) is False
+    image_handler_mock.mark_hash_sent.assert_not_called()

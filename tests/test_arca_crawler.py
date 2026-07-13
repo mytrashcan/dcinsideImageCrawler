@@ -201,6 +201,8 @@ def test_get_latest_posts_dedups_across_calls(monkeypatch: object) -> None:
 
     first = c.get_latest_posts(max_posts=10)
     assert {p["post_id"] for p in first} == {"0", "1", "2"}
+    for post in first:
+        c.mark_sent(post["post_id"])
     # 같은 목록을 다시 크롤 → 이미 본 글이라 없음
     assert c.get_latest_posts(max_posts=10) == []
 
