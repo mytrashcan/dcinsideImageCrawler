@@ -72,8 +72,6 @@ class DCInsideCrawler:
                     logger.debug(f"{title} {link} {image_insert}")
 
                     if post_id not in self.sent_post_ids:
-                        # 다음 사이클에서 같은 게시글을 재다운로드하지 않도록 기록
-                        self.sent_post_ids.add(post_id)
                         return {
                             'link': link,
                             'title': title,
@@ -93,3 +91,7 @@ class DCInsideCrawler:
         except requests.RequestException as e:
             logger.error(f"크롤링 요청 실패: {e}")
             return None
+
+    def mark_sent(self, post_id: str) -> None:
+        """Acknowledge a post only after delivery succeeds."""
+        self.sent_post_ids.add(post_id)

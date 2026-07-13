@@ -127,6 +127,8 @@ class TestDownloadImages:
         handler = ImageHandler()
         page_response = MagicMock(text=html)
         image_response = MagicMock(content=image_data)
+        image_response.headers = {"content-length": str(len(image_data))}
+        image_response.iter_content.return_value = [image_data]
         handler.session = MagicMock()
         handler.session.get.side_effect = [page_response, image_response]
         return handler

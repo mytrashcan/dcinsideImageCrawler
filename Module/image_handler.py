@@ -5,14 +5,16 @@ import io
 import logging
 import math
 import os
+from math import ceil
 from urllib.parse import unquote, urljoin, urlsplit
 
 import requests
 from bs4 import BeautifulSoup
 from PIL import Image
 
-from Module.config import BS_PARSER, DISCORD_MAX_SIZE, HEADERS, REQUEST_TIMEOUT
+from Module.config import BS_PARSER, DISCORD_MAX_SIZE, HEADERS, REQUEST_TIMEOUT, app_config
 from Module.lru_cache import LRUCache
+from Module.media_download import MediaDownloadTooLarge, download_limited
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +23,7 @@ logger = logging.getLogger(__name__)
 TELEGRAM_MAX_SIZE = 10 * 1024 * 1024
 
 MAX_HASH_CACHE_SIZE = 1000
+MAX_GIF_FRAMES = 20
 
 
 class ImageHandler:
@@ -32,6 +35,12 @@ class ImageHandler:
     def is_duplicate(self, content_hash: object) -> object:
         """이미 처리한 이미지 해시인지 확인하고 기록한다. 이미 봤으면 True."""
         return self._seen_hashes.add_if_absent(content_hash)
+
+    def has_seen_hash(self, content_hash: object) -> bool:
+        return content_hash in self._seen_hashes
+
+    def mark_hash_sent(self, content_hash: object) -> None:
+        self._seen_hashes.add(content_hash)
 
     def clear_seen_hashes(self) -> object:
         """중복 체크용 해시 캐시 초기화"""
@@ -49,22 +58,14 @@ class ImageHandler:
                 buffer.seek(0)
                 return buffer, original_size
 
+            frame_count = int(getattr(img, "n_frames", 1))
+            step = max(1, ceil(frame_count / MAX_GIF_FRAMES))
             frames = []
             durations = []
-
-            try:
-                while True:
-                    frames.append(img.copy())
-                    durations.append(img.info.get('duration', 100))
-                    img.seek(img.tell() + 1)
-            except EOFError:
-                pass
-
-            # 1단계: 프레임 수 줄이기 (2프레임마다 1개)
-            if len(frames) > 10:
-                step = 2
-                frames = frames[::step]
-                durations = [d * step for d in durations[::step]]
+            for frame_index in range(0, frame_count, step):
+                img.seek(frame_index)
+                frames.append(img.copy())
+                durations.append(img.info.get("duration", 100) * step)
 
             # 2단계: 크기 조절 (비율 유지)
             # 파일 크기는 대략 면적(scale^2)에 비례하므로 sqrt(목표/원본)을 시작점으로 추정
@@ -114,20 +115,32 @@ class ImageHandler:
             if img.mode in ('RGBA', 'P'):
                 img = img.convert('RGB')
 
-            quality = 95
-            while quality > 20:
+            low, high = 20, 95
+            best_output = None
+            best_quality = None
+            for _ in range(6):
+                quality = (low + high) // 2
                 output = io.BytesIO()
                 img.save(output, format='JPEG', quality=quality, optimize=True)
-
                 if output.tell() <= target_size:
-                    output.seek(0)
-                    logger.info(f"[이미지 압축] {filename}: {original_size} -> {output.tell()} bytes (quality: {quality})")
-                    return output, output.tell()
+                    best_output = output
+                    best_quality = quality
+                    low = quality + 1
+                else:
+                    high = quality - 1
 
-                quality -= 10
+            if best_output is not None:
+                best_output.seek(0)
+                logger.info(
+                    f"[이미지 압축] {filename}: {original_size} -> {best_output.getbuffer().nbytes} "
+                    f"bytes (quality: {best_quality})"
+                )
+                return best_output, best_output.getbuffer().nbytes
 
             scale = min(0.8, round(math.sqrt(target_size / original_size), 1) + 0.1)
-            while scale > 0.3:
+            for _ in range(4):
+                if scale <= 0.3:
+                    break
                 new_size = (int(img.width * scale), int(img.height * scale))
                 resized = img.resize(new_size, Image.Resampling.LANCZOS)
 
@@ -139,7 +152,7 @@ class ImageHandler:
                     logger.info(f"[이미지 압축] {filename}: {original_size} -> {output.tell()} bytes (scale: {scale:.1f})")
                     return output, output.tell()
 
-                scale -= 0.1
+                scale -= 0.15
 
             buffer.seek(0)
             return buffer, original_size
@@ -194,6 +207,18 @@ class ImageHandler:
 
         return discord_buffer, telegram_buffer, is_gif
 
+    def prepare_image(self, image_data: bytes, filename: str) -> tuple[object, object, bool]:
+        """Validate dimensions once, then build Discord and Telegram buffers."""
+        try:
+            with Image.open(io.BytesIO(image_data)) as image:
+                width, height = image.size
+                if width <= 0 or height <= 0 or width * height > app_config.media_max_pixels:
+                    raise ValueError("image dimensions exceed safety limit")
+                image.verify()
+        except (OSError, SyntaxError, Image.DecompressionBombError) as exc:
+            raise ValueError("invalid image data") from exc
+        return self.process_image(image_data, filename)
+
     @staticmethod
     def _is_allowed_dc_image_url(url: str) -> bool:
         parts = urlsplit(url)
@@ -245,22 +270,33 @@ class ImageHandler:
                     continue
                 filename = self._image_filename(element, img_url)
 
-                response = self.session.get(img_url, headers=headers, timeout=REQUEST_TIMEOUT)
-                response.raise_for_status()
-                image_data = response.content
+                image_data = download_limited(
+                    self.session,
+                    img_url,
+                    headers=headers,
+                    timeout=REQUEST_TIMEOUT,
+                    max_bytes=app_config.media_download_max_mb * 1024 * 1024,
+                )
 
                 # 해시로 중복 체크
                 content_hash = hashlib.sha256(image_data).hexdigest()
-                if self.is_duplicate(content_hash):
+                if self.has_seen_hash(content_hash):
                     logger.info(f"동일한 파일이 존재합니다. PASS: {filename}")
-                    continue
+                    return []
 
                 # 이미지 처리 (압축 포함)
-                discord_buffer, telegram_buffer, is_gif = self.process_image(image_data, filename)
+                discord_buffer, telegram_buffer, is_gif = self.prepare_image(image_data, filename)
 
                 logger.info(f"[메모리 버퍼] 파일명: {filename}, 원본 크기: {len(image_data)} bytes, GIF: {is_gif}")
 
-                return [(discord_buffer, telegram_buffer, filename, is_gif)]
+                return [(
+                    discord_buffer,
+                    telegram_buffer,
+                    filename,
+                    is_gif,
+                    image_data,
+                    content_hash,
+                )]
 
             return None
 
@@ -269,4 +305,7 @@ class ImageHandler:
             return None
         except requests.RequestException as e:
             logger.error(f"이미지 다운로드 실패: {e}")
+            return None
+        except MediaDownloadTooLarge:
+            logger.warning("이미지가 다운로드 제한을 초과합니다: %s", url)
             return None

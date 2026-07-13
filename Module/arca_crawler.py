@@ -116,10 +116,11 @@ class ArcaliveCrawler:
             if post["post_id"] not in self.sent_items:
                 new_posts.append(post)
 
-        for post in new_posts[:max_posts]:
-            self.sent_items.add(post["post_id"])
-
         return new_posts[:max_posts]
+
+    def mark_sent(self, post_id: str) -> None:
+        """Acknowledge a post only after delivery succeeds."""
+        self.sent_items.add(post_id)
 
     def _parse_hybrid_row(self, vrow):
         if self._is_notice_row(vrow):

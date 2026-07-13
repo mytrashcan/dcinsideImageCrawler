@@ -6,7 +6,7 @@ import json
 import sys
 
 # config는 arca_crawler보다 먼저 import해야 함 (arca_crawler가 app_config로 프록시를 읽음)
-from Module.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TOKEN, app_config, get_discord_intents, validate_required_env  # isort: skip
+from Module.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TOKEN, get_discord_intents, validate_required_env  # isort: skip
 from Module.arca_bot import ArcaBot
 from Module.dcbot import DCBot
 
@@ -49,12 +49,8 @@ async def main(gallery_name: object) -> object:
             telegram_token=TELEGRAM_BOT_TOKEN,
             telegram_chat_id=TELEGRAM_CHAT_ID,
             intents=intents,
+            gallery_name=gallery_name,
         )
-        # WEB_GALLERY=1 이면 보낸 이미지를 웹 서버의 bounded memory store로 전달한다.
-        if app_config.web_gallery:
-            from Module.gallery_client import attach_web_gallery
-
-            attach_web_gallery(bot.message_sender, gallery_name)
 
     await bot.run_bot()
 

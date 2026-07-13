@@ -6,10 +6,12 @@ import random
 
 import discord
 
+from Module.config import app_config
 from Module.crawler import DCInsideCrawler
 from Module.image_handler import ImageHandler
 from Module.media_pipeline import MediaPipeline
 from Module.message_sender import MessageSender
+from Module.process_leader import ProcessLeaderLock
 
 logger = logging.getLogger(__name__)
 
@@ -18,11 +20,12 @@ CLEAR_CACHE_COMMAND = "!쓰담쓰담"
 
 
 class DCBot(discord.Client):
-    def __init__(self, token: object, base_url: object, channel_ids: object, telegram_token: object, telegram_chat_id: object, intents: object) -> None:
+    def __init__(self, token: object, base_url: object, channel_ids: object, telegram_token: object, telegram_chat_id: object, intents: object, gallery_name: object="") -> None:
         super().__init__(intents=intents)
         self.token = token
         self.base_url = base_url
         self.channel_ids = channel_ids
+        self.gallery_name = str(gallery_name)
         self.crawler = DCInsideCrawler(base_url)
         self.image_handler = ImageHandler()
         self.message_sender = MessageSender(telegram_token, telegram_chat_id, image_handler=self.image_handler)
@@ -31,8 +34,11 @@ class DCBot(discord.Client):
             self,
             self.channel_ids,
             image_handler=self.image_handler,
+            web_gallery_enabled=app_config.web_gallery,
+            web_gallery_name=self.gallery_name,
         )
         self._crawler_task: asyncio.Task | None = None
+        self._command_leader = ProcessLeaderLock()
 
     async def on_ready(self) -> object:
         logger.info(f"Logged in as {self.user}")
@@ -49,14 +55,17 @@ class DCBot(discord.Client):
         if self._crawler_task is not None:
             self._crawler_task.cancel()
             await asyncio.gather(self._crawler_task, return_exceptions=True)
+        await self.media_pipeline.close()
+        self._command_leader.close()
         await super().close()
 
     async def start_crawling(self) -> object:
         while True:
             try:
                 post = await asyncio.to_thread(self.crawler.get_latest_post)
-                if post and post['has_image']:
-                    await self.process_post(post)
+                if post:
+                    if not post['has_image'] or await self.process_post(post):
+                        self.crawler.mark_sent(post["post_id"])
             except discord.ConnectionClosed:
                 logger.warning("Discord 연결이 끊어졌습니다. 재연결 대기 중...")
                 await asyncio.sleep(5)
@@ -68,8 +77,10 @@ class DCBot(discord.Client):
     async def process_post(self, post: object) -> object:
         # blocking I/O를 별도 스레드에서 실행
         images = await asyncio.to_thread(self.image_handler.download_images, post['link'])
+        if images is None:
+            return False
         if not images:
-            return
+            return True
 
         media_items = [
             {
@@ -77,16 +88,23 @@ class DCBot(discord.Client):
                 "telegram_buffer": telegram_buffer,
                 "filename": filename,
                 "is_gif": is_gif,
+                "original_data": original_data,
+                "content_hash": content_hash,
+                "validated": True,
             }
-            for discord_buffer, telegram_buffer, filename, is_gif in images
+            for discord_buffer, telegram_buffer, filename, is_gif, original_data, content_hash in images
         ]
 
-        await self.media_pipeline.distribute(
+        delivered = await self.media_pipeline.distribute(
             media_items,
             title=post['title'],
             link=post['link'],
             inter_image_delay=1.0,
         )
+        if delivered:
+            for item in media_items:
+                self.image_handler.mark_hash_sent(item["content_hash"])
+        return delivered
 
     async def on_message(self, message: object) -> object:
         if message.author == self.user:
@@ -94,6 +112,9 @@ class DCBot(discord.Client):
 
         if message.content.strip() == CLEAR_CACHE_COMMAND:
             self.image_handler.clear_seen_hashes()
+
+            if not self._command_leader.try_acquire():
+                return
 
             file = discord.File("gaki.png", filename="gaki.png")
             embed = discord.Embed(

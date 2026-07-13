@@ -36,10 +36,12 @@ dc_galleries = deque(g for g in gallery_names if gallery_configs[g].get("type") 
 arca_galleries = deque(g for g in gallery_names if gallery_configs[g].get("type") == "arca")
 
 processes = {}  # {gallery_name: (process, start_time)}
+restart_failures: dict[str, int] = {}
 
-MAX_DC = 5
-MAX_ARCA = 5
-MAX_PROCESS_LIFETIME = 3600
+MAX_DC = min(5, max(1, int(os.getenv("MAX_DC_CRAWLERS", "5"))))
+MAX_ARCA = min(5, max(1, int(os.getenv("MAX_ARCA_CRAWLERS", "5"))))
+BATCH_LIFETIME = max(60, int(os.getenv("CRAWLER_BATCH_SECONDS", "3600")))
+RESTART_BACKOFF_MAX = 60
 
 shutdown_requested = False
 
@@ -139,17 +141,42 @@ def run_script(gallery_name: object) -> object:
     logger.info(f"{gallery_name} 크롤러 실행됨 (PID: {process.pid})")
     return process
 
-def stop_running_processes() -> object:
-    """현재 실행 중인 모든 프로세스를 종료"""
-    for gallery_name, (process, _) in list(processes.items()):
+def stop_processes(gallery_names: set[str], timeout: float = 10.0) -> None:
+    """Terminate selected processes concurrently within one shared deadline."""
+    running = [
+        (gallery_name, entry[0])
+        for gallery_name, entry in processes.items()
+        if gallery_name in gallery_names and entry and entry[0] is not None
+    ]
+    for gallery_name, process in running:
         logger.info(f"{gallery_name} 크롤러 종료 중...")
-        process.terminate()
-        try:
-            process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
+        if process.poll() is None:
+            process.terminate()
+
+    deadline = time.monotonic() + timeout
+    remaining = {name: process for name, process in running if process.poll() is None}
+    while remaining and time.monotonic() < deadline:
+        remaining = {name: process for name, process in remaining.items() if process.poll() is None}
+        if remaining:
+            time.sleep(0.1)
+
+    for gallery_name, process in remaining.items():
+        logger.warning("%s 크롤러가 제때 종료되지 않아 강제 종료합니다.", gallery_name)
+        if process.poll() is None:
             process.kill()
-            process.wait()
-    processes.clear()
+    for process in remaining.values():
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            logger.error("강제 종료 후에도 프로세스가 남아 있습니다: pid=%s", process.pid)
+    for gallery_name in gallery_names:
+        processes.pop(gallery_name, None)
+        restart_failures.pop(gallery_name, None)
+
+
+def stop_running_processes(timeout: float = 10.0) -> object:
+    """Terminate the whole batch concurrently within one shared deadline."""
+    stop_processes(set(processes), timeout)
 
 def _pick_from_queue(queue: object, max_count: object, source_label: object) -> object:
     """큐에서 최대 max_count개의 갤러리를 선택 (실행 중이면 건너뜀)"""
@@ -173,26 +200,71 @@ def _pick_from_queue(queue: object, max_count: object, source_label: object) -> 
         logger.info(f"{source_label}: {started}개 시작됨" + (f", {skipped}개 이미 실행 중" if skipped else ""))
     return started
 
+
+def monitor_batch(expected_galleries: set[str]) -> None:
+    """Restart only crashed members of the active platform-limited batch."""
+    now = time.monotonic()
+    for gallery_name in expected_galleries:
+        entry = processes.get(gallery_name)
+        if entry is None or len(entry) != 2:
+            continue
+        process, started_at = entry
+        return_code = process.poll()
+        if return_code is None:
+            continue
+        failures = restart_failures.get(gallery_name, 0) + 1
+        restart_failures[gallery_name] = failures
+        delay = min(RESTART_BACKOFF_MAX, 2 ** min(failures, 6))
+        logger.warning(
+            "%s 크롤러 종료(code=%s, uptime=%.1fs). %.1f초 후 재시작합니다.",
+            gallery_name,
+            return_code,
+            max(0.0, time.time() - started_at),
+            delay,
+        )
+        processes[gallery_name] = (None, now + delay, failures)
+
+    for gallery_name in expected_galleries:
+        entry = processes.get(gallery_name)
+        if not entry or len(entry) != 3:
+            continue
+        _, restart_at, failures = entry
+        if now < restart_at:
+            continue
+        process = run_script(gallery_name)
+        processes[gallery_name] = (process, time.time())
+
 def manage_crawlers() -> object:
-    """크롤링 프로세스를 관리 (DC 최대 {MAX_DC}개 + Arca 최대 {MAX_ARCA}개)"""
+    """Run independent DC and Arca batches, each capped at five crawlers."""
+    logger.info(f"DC 갤러리: {len(dc_galleries)}개, Arca 갤러리: {len(arca_galleries)}개")
+    _pick_from_queue(dc_galleries, MAX_DC, "DC")
+    active_dc = {name for name in processes if gallery_configs[name].get("type") != "arca"}
+    _pick_from_queue(arca_galleries, MAX_ARCA, "Arca")
+    active_arca = {name for name in processes if gallery_configs[name].get("type") == "arca"}
+
+    now = time.monotonic()
+    next_dc_rotation = now + BATCH_LIFETIME if len(dc_galleries) > MAX_DC else float("inf")
+    next_arca_rotation = now + BATCH_LIFETIME if len(arca_galleries) > MAX_ARCA else float("inf")
+
     while not shutdown_requested:
-        logger.info(f"DC 갤러리: {len(dc_galleries)}개, Arca 갤러리: {len(arca_galleries)}개")
+        now = time.monotonic()
+        monitor_batch(active_dc | active_arca)
 
-        stop_running_processes()
+        if now >= next_dc_rotation:
+            logger.info("DC 배치만 다음 갤러리로 교체합니다.")
+            stop_processes(active_dc)
+            _pick_from_queue(dc_galleries, MAX_DC, "DC")
+            active_dc = {name for name in processes if gallery_configs[name].get("type") != "arca"}
+            next_dc_rotation = now + BATCH_LIFETIME
 
-        dc_count = _pick_from_queue(dc_galleries, MAX_DC, "DC")
-        arca_count = _pick_from_queue(arca_galleries, MAX_ARCA, "Arca")
+        if now >= next_arca_rotation:
+            logger.info("Arca 배치만 다음 갤러리로 교체합니다.")
+            stop_processes(active_arca)
+            _pick_from_queue(arca_galleries, MAX_ARCA, "Arca")
+            active_arca = {name for name in processes if gallery_configs[name].get("type") == "arca"}
+            next_arca_rotation = now + BATCH_LIFETIME
 
-        total = dc_count + arca_count
-        logger.info(f"총 {total}개 크롤러 실행 중 (DC: {dc_count}, Arca: {arca_count})")
-
-        elapsed_time = 0
-        while elapsed_time < MAX_PROCESS_LIFETIME and not shutdown_requested:
-            time.sleep(1)
-            elapsed_time += 1
-
-        if not shutdown_requested:
-            logger.info("실행 시간 초과. 프로세스를 재시작합니다.")
+        time.sleep(1)
 
 def main() -> object:
     """메인 실행 함수"""

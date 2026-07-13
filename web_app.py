@@ -322,20 +322,20 @@ def create_app(store: MemoryGalleryStore | None = None) -> FastAPI:
                     return JSONResponse({"error": "payload too large"}, status_code=413)
             except ValueError:
                 return JSONResponse({"error": "invalid content length"}, status_code=400)
-        data = bytearray()
-        async for chunk in request.stream():
-            data.extend(chunk)
-            if len(data) > max_bytes:
-                return JSONResponse({"error": "payload too large"}, status_code=413)
-        try:
-            async with ingest_slots:
+        async with ingest_slots:
+            data = bytearray()
+            async for chunk in request.stream():
+                data.extend(chunk)
+                if len(data) > max_bytes:
+                    return JSONResponse({"error": "payload too large"}, status_code=413)
+            try:
                 item = await asyncio.to_thread(
                     gallery_store.put, bytes(data), filename, title, link, gallery
                 )
-        except InvalidImage:
-            return JSONResponse({"error": "invalid image"}, status_code=415)
-        except ImageTooLarge:
-            return JSONResponse({"error": "image too large"}, status_code=413)
+            except InvalidImage:
+                return JSONResponse({"error": "invalid image"}, status_code=415)
+            except ImageTooLarge:
+                return JSONResponse({"error": "image too large"}, status_code=413)
         return JSONResponse(item)
 
     @app.get("/images/{image_id}")

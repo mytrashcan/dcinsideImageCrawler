@@ -12,8 +12,8 @@ def test_publish_sends_bytes_to_authenticated_internal_endpoint(monkeypatch):
     response = MagicMock()
     response.json.return_value = {"id": "abc.jpg"}
     post = MagicMock(return_value=response)
-    monkeypatch.setattr("Module.gallery_client.requests.post", post)
     client = GalleryClient("http://127.0.0.1:8000", "secret")
+    client.session.post = post
 
     result = client.publish(
         b"image-bytes",
@@ -35,10 +35,10 @@ def test_publish_retries_when_web_process_is_starting(monkeypatch):
     response = MagicMock()
     response.json.return_value = {"id": "abc.jpg"}
     post = MagicMock(side_effect=[requests.ConnectionError("not ready"), response])
-    monkeypatch.setattr("Module.gallery_client.requests.post", post)
     sleep = MagicMock()
     monkeypatch.setattr("Module.gallery_client.time.sleep", sleep)
     client = GalleryClient("http://127.0.0.1:8000", "secret", retry_delay_seconds=0.25)
+    client.session.post = post
 
     assert client.publish(b"image-bytes", "sample.jpg") == {"id": "abc.jpg"}
     assert post.call_count == 2
@@ -53,8 +53,8 @@ def test_publish_failure_log_does_not_include_image_metadata(monkeypatch, caplog
         response=response,
     )
     response.raise_for_status.side_effect = error
-    monkeypatch.setattr("Module.gallery_client.requests.post", MagicMock(return_value=response))
     client = GalleryClient("http://127.0.0.1:8000", "secret", max_attempts=1)
+    client.session.post = MagicMock(return_value=response)
 
     with caplog.at_level(logging.WARNING, logger="Module.gallery_client"):
         result = client.publish(
@@ -74,6 +74,20 @@ def test_publish_failure_log_does_not_include_image_metadata(monkeypatch, caplog
         "private-gallery",
     ):
         assert private_value not in caplog.text
+
+
+def test_publish_does_not_retry_permanent_client_error(monkeypatch):
+    response = MagicMock(status_code=413)
+    error = requests.HTTPError("too large", response=response)
+    response.raise_for_status.side_effect = error
+    sleep = MagicMock()
+    monkeypatch.setattr("Module.gallery_client.time.sleep", sleep)
+    client = GalleryClient("http://127.0.0.1:8000", "secret", max_attempts=3)
+    client.session.post = MagicMock(return_value=response)
+
+    assert client.publish(b"image", "large.jpg") == {}
+    assert client.session.post.call_count == 1
+    sleep.assert_not_called()
 
 
 @pytest.mark.asyncio
