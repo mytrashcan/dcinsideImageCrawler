@@ -110,3 +110,28 @@ async def test_sender_wrapper_publishes_only_after_successful_delivery():
         link="https://example.com",
         gallery="test",
     )
+
+
+@pytest.mark.asyncio
+async def test_sender_wrapper_forwards_prevalidated_media():
+    sender = MagicMock()
+    original_discord = AsyncMock(return_value=True)
+    original_telegram = AsyncMock(return_value=True)
+    sender.send_to_discord = original_discord
+    sender.send_to_telegram = original_telegram
+    client = MagicMock()
+    client.publish_async = AsyncMock(return_value={"id": "abc.jpg"})
+    attach_web_gallery(sender, "test", client)
+    buffer = io.BytesIO(b"image")
+
+    await sender.send_to_discord(
+        MagicMock(), "title", buffer, "sample.jpg", validated=True
+    )
+    await sender.send_to_telegram(
+        buffer, "sample.jpg", False, validated=True
+    )
+
+    original_discord.assert_awaited_once()
+    original_telegram.assert_awaited_once()
+    assert original_discord.await_args.kwargs["validated"] is True
+    assert original_telegram.await_args.kwargs["validated"] is True

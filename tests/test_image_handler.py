@@ -187,6 +187,18 @@ class TestDownloadImages:
             "https://dcimg8.dcinside.co.kr:444/image.png"
         ) is False
 
+    def test_permanently_rejected_image_is_terminal(self, monkeypatch) -> None:
+        html = (
+            '<div class="writing_view_box">'
+            '<img src="https://dcimg8.dcinside.co.kr/large.png"></div>'
+        )
+        handler = self.make_handler(html, b"x")
+        monkeypatch.setattr("Module.config.app_config.media_download_max_mb", 0)
+
+        assert handler.download_images(
+            "https://gall.dcinside.com/mgallery/board/view/?id=test&no=1"
+        ) == []
+
 
 class TestCompress:
     def test_compress_image_reaches_target(self) -> None:

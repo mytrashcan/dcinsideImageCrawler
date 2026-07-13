@@ -7,7 +7,11 @@ from collections.abc import Mapping
 import requests
 
 
-class MediaDownloadTooLarge(ValueError):
+class MediaDownloadRejected(ValueError):
+    """The source media cannot become deliverable by retrying later."""
+
+
+class MediaDownloadTooLarge(MediaDownloadRejected):
     pass
 
 
@@ -23,13 +27,19 @@ def download_limited(
     """Stream a response into memory while enforcing a hard byte limit."""
     response = client.get(url, headers=headers, timeout=timeout, stream=True)
     try:
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            status = getattr(exc.response, "status_code", None)
+            if isinstance(status, int) and 400 <= status < 500 and status not in {408, 429}:
+                raise MediaDownloadRejected(f"media request rejected with status {status}") from exc
+            raise
         content_length = response.headers.get("content-length")
         if content_length:
             try:
                 declared_size = int(content_length)
             except ValueError as exc:
-                raise requests.exceptions.InvalidHeader("invalid content-length") from exc
+                raise MediaDownloadRejected("invalid content-length") from exc
             if declared_size > max_bytes:
                 raise MediaDownloadTooLarge("media exceeds download limit")
 

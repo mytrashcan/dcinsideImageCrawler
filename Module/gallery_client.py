@@ -104,8 +104,12 @@ def attach_web_gallery(message_sender, gallery: str = "", client: GalleryClient 
     original_discord = message_sender.send_to_discord
     original_telegram = message_sender.send_to_telegram
 
-    async def discord_with_web(channel, title, image_buffer, filename, url=None):
-        sent = await original_discord(channel, title, image_buffer, filename, url)
+    async def discord_with_web(
+        channel, title, image_buffer, filename, url=None, *, validated: bool = False
+    ):
+        sent = await original_discord(
+            channel, title, image_buffer, filename, url, validated=validated
+        )
         if sent:
             try:
                 data = image_buffer.getvalue()
@@ -116,8 +120,21 @@ def attach_web_gallery(message_sender, gallery: str = "", client: GalleryClient 
             )
         return sent
 
-    async def telegram_with_web(image_buffer, filename=None, is_gif=False, max_retries=3):
-        sent = await original_telegram(image_buffer, filename, is_gif, max_retries)
+    async def telegram_with_web(
+        image_buffer,
+        filename=None,
+        is_gif=False,
+        max_retries=3,
+        *,
+        validated: bool = False,
+    ):
+        sent = await original_telegram(
+            image_buffer,
+            filename,
+            is_gif,
+            max_retries,
+            validated=validated,
+        )
         if sent:
             try:
                 data = image_buffer.getvalue()

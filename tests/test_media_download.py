@@ -1,8 +1,13 @@
 from unittest.mock import MagicMock
 
 import pytest
+import requests
 
-from Module.media_download import MediaDownloadTooLarge, download_limited
+from Module.media_download import (
+    MediaDownloadRejected,
+    MediaDownloadTooLarge,
+    download_limited,
+)
 
 
 def make_response(chunks: list[bytes], content_length: int | None = None) -> MagicMock:
@@ -45,3 +50,20 @@ def test_download_limited_rejects_chunked_overflow() -> None:
         download_limited(
             client, "https://example.com/image", headers=None, timeout=1, max_bytes=6
         )
+
+
+def test_download_limited_classifies_permanent_client_error() -> None:
+    client = MagicMock()
+    response = make_response([])
+    response.status_code = 404
+    response.raise_for_status.side_effect = requests.HTTPError(
+        "not found", response=response
+    )
+    client.get.return_value = response
+
+    with pytest.raises(MediaDownloadRejected):
+        download_limited(
+            client, "https://example.com/missing", headers=None, timeout=1, max_bytes=6
+        )
+
+    response.close.assert_called_once()

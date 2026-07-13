@@ -21,7 +21,7 @@ from Module.arca_crawler import ArcaliveCrawler
 from Module.config import app_config
 from Module.embeds import make_image_embed
 from Module.image_handler import ImageHandler
-from Module.media_download import MediaDownloadTooLarge, download_limited
+from Module.media_download import MediaDownloadRejected, download_limited
 from Module.media_pipeline import MediaPipeline
 from Module.message_sender import MessageSender
 
@@ -117,7 +117,7 @@ class ArcaBot(discord.Client):
         images = await asyncio.to_thread(self.crawler.extract_all_images, post["link"])
         if not images:
             logger.info(f"[아카라이브] 이미지 없음: {post['title']}")
-            return False
+            return True
 
         # 게시글당 최대 이미지 수 제한
         if len(images) > MAX_IMAGES_PER_POST:
@@ -151,9 +151,24 @@ class ArcaBot(discord.Client):
         results = await asyncio.gather(
             *(self._download_and_process_one(img_info, link) for img_info in images)
         )
-        return [item for item, _ in results if item is not None], all(
+        return self._deduplicate_downloads(results), all(
             resolved for _, resolved in results
         )
+
+    @staticmethod
+    def _deduplicate_downloads(results) -> list[dict[str, object]]:
+        unique_items = []
+        seen_hashes = set()
+        for item, _ in results:
+            if item is None:
+                continue
+            content_hash = item["content_hash"]
+            if content_hash in seen_hashes:
+                logger.info("[아카라이브] 게시글 내 중복 이미지 스킵: %s", item["filename"])
+                continue
+            seen_hashes.add(content_hash)
+            unique_items.append(item)
+        return unique_items
 
     async def _download_and_process_one(
         self, img_info: dict[str, object], link: str
@@ -186,8 +201,16 @@ class ArcaBot(discord.Client):
                     "content_hash": content_hash,
                     "validated": True,
                 }, True
-            except (OSError, ValueError) as e:
+            except MediaDownloadRejected as e:
+                logger.warning(
+                    f"[아카라이브] 영구적으로 거절된 이미지 ({img_info['filename']}): {e}"
+                )
+                return None, True
+            except ValueError as e:
                 logger.warning(f"[아카라이브] 이미지 처리 실패 ({img_info['filename']}): {e}")
+                return None, True
+            except OSError as e:
+                logger.warning(f"[아카라이브] 이미지 처리 재시도 필요 ({img_info['filename']}): {e}")
                 return None, False
 
             # Hold the semaphore slot briefly after every CDN attempt, including failures.
@@ -208,9 +231,6 @@ class ArcaBot(discord.Client):
                 timeout=15,
                 max_bytes=app_config.media_download_max_mb * 1024 * 1024,
             )
-        except MediaDownloadTooLarge:
-            logger.warning("이미지가 다운로드 제한을 초과함: %s", img_url)
-            return None
         except requests.RequestException as e:
             logger.warning(f"이미지 다운로드 실패 ({img_url}): {e}")
             return None
