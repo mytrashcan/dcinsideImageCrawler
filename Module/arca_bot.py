@@ -175,9 +175,10 @@ class ArcaBot(discord.Client):
                 content_hash = hashlib.sha256(buffer_data).hexdigest()
                 if self.image_handler.has_seen_hash(content_hash):
                     logger.info(f"[아카라이브] 중복 이미지 스킵: {img_info['filename']}")
+                    await asyncio.sleep(IMAGE_DOWNLOAD_DELAY)
                     return None, True
 
-                return {
+                result = {
                     "discord_buffer": discord_buffer,
                     "telegram_buffer": telegram_buffer,
                     "filename": img_info["filename"],
@@ -185,14 +186,12 @@ class ArcaBot(discord.Client):
                     "original_data": buffer_data,
                     "content_hash": content_hash,
                     "validated": True,
-                }, True
+                }
+                await asyncio.sleep(IMAGE_DOWNLOAD_DELAY)
+                return result, True
             except (OSError, ValueError) as e:
                 logger.warning(f"[아카라이브] 이미지 처리 실패 ({img_info['filename']}): {e}")
                 return None, False
-
-            # CDN rate limit 방지
-            finally:
-                await asyncio.sleep(IMAGE_DOWNLOAD_DELAY)
 
     def _download_single_image(self, img_url: str, referer: str) -> bytes | None:
         """단일 이미지 URL을 메모리로 다운로드.
@@ -216,7 +215,7 @@ class ArcaBot(discord.Client):
             return None
 
     async def _send_image_batch(self, batch: list[dict[str, object]], title: str,
-                                link: str, batch_index: int) -> object:
+                                link: str, batch_index: int) -> bool:
         """한 배치의 이미지를 Discord embed로 전송한다.
 
         - 첫 번째 embed: title + link 포함
@@ -272,7 +271,7 @@ class ArcaBot(discord.Client):
         await self.media_pipeline.attach_to_web_gallery(data, filename, global_idx, title, link)
 
     async def _send_fallback(self, channel: object, batch: list[dict[str, object]], title: str,
-                              link: str, batch_index: int) -> object:
+                              link: str, batch_index: int) -> bool:
         """413(파일 크기 초과) 발생 시 한 장씩 개별 전송 (재압축 포함)."""
         all_sent = True
         for i, item in enumerate(batch):
