@@ -6,6 +6,8 @@
 
 **Gallery Image Relay** scrapes images from **DCInside** and **Arcalive** (arca.live), then relays them to **Discord**, **Telegram**, and an optional ephemeral web gallery. It is designed to run on cloud servers such as **Oracle Cloud** and **Amazon Web Services**.
 
+> **No persistent image storage:** gallery images exist only in the web process's volatile **RAM**. They are never saved to disk or a database, expire automatically, and disappear immediately whenever the web process restarts.
+
 Two crawler types are supported:
 
 - **DCInside** (`Module/crawler.py` + `Module/dcbot.py`) - waits behind a 20-post moderation window, prefers the original attachment, and relays one image per post to Discord and Telegram.
@@ -26,7 +28,7 @@ Both crawlers share the same image pipeline (`ImageHandler` for compression/dedu
   - Automatic re-compress & retry on Discord 413 (file too large) responses
 - Fast HTML parsing via `lxml` + `SoupStrainer` (falls back to `html.parser` if lxml is unavailable)
 - Config-driven gallery management via `galleries.json` - no code changes needed to add new galleries
-- Optional **ephemeral web gallery** - serves collected images in a near real-time, Pinterest-style masonry feed (titles link to the source post) that auto-expires (TTL/item-cap), no persistent storage
+- Optional **RAM-only ephemeral web gallery** - serves collected images in a near real-time, Pinterest-style masonry feed (titles link to the source post) with no persistent image storage
   - Installable as a PWA, ships `sitemap.xml`/`robots.txt`/`security.txt`, optional Cloudflare Turnstile bot gate and AdSense hooks
 - Duplicate image detection via SHA256 hashing
 - Stable post-ID deduplication and strict source/CDN URL validation
@@ -126,7 +128,7 @@ No code changes required - just restart the launcher.
 
 You can serve the collected images as a live, **ephemeral** web feed - a Pinterest-style masonry grid at `http://<host>:8000/` that updates roughly in real time (the page polls every 5 seconds and only adds new cards). Post titles link back to their original source posts.
 
-**Images are never written to disk.** The web process owns a bounded in-memory store. Images disappear when they exceed the TTL, item limit, or byte limit, and every image disappears immediately when the web process restarts.
+**Images are stored only in volatile process memory (RAM), never on disk or in a database.** The web process owns a bounded in-memory store. Images disappear when they exceed the TTL, item limit, or byte limit, and every image disappears immediately when the web process restarts.
 
 Crawler processes publish bytes to the web process through an authenticated localhost endpoint. `WEB_INGEST_TOKEN` must be shared through `.env`; `deploy_oci.sh` creates it automatically. The web process enforces `WEB_FEED_MAX_ITEMS`, `WEB_MEMORY_MAX_MB`, and `WEB_IMAGE_MAX_MB` before accepting data.
 
