@@ -172,7 +172,9 @@ class MediaPipeline:
         if self.gallery_client is not None:
             self.gallery_client.close()
 
-    async def send_batch_to_channel(self, channel, batch, *, title, link, batch_index):
+    async def send_batch_to_channel(
+        self, channel, batch, *, title, link, batch_index
+    ) -> bool:
         """한 채널에 배치 이미지를 단일 Discord 메시지로 전송한다."""
         if channel is None:
             return False
@@ -212,7 +214,7 @@ class MediaPipeline:
         except discord.HTTPException as e:
             logger.error(f"[아카라이브] Discord 전송 실패: {e.status} {e.text}")
             if e.status == 413 and hasattr(self.client, "_send_fallback"):
-                return bool(
-                    await self.client._send_fallback(channel, batch, title, link, batch_index)
+                return await self.client._send_fallback(
+                    channel, batch, title, link, batch_index
                 )
             return False
