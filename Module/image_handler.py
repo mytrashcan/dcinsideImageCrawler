@@ -255,10 +255,35 @@ class ImageHandler:
         )
 
     @staticmethod
+    def _image_extension_from_data(image_data: bytes) -> str:
+        """Determine the correct image extension from magic bytes."""
+        if image_data[:4] == b'\x89PNG':
+            return 'png'
+        if image_data[:2] == b'\xff\xd8':
+            return 'jpg'
+        if image_data[:6] in (b'GIF87a', b'GIF89a'):
+            return 'gif'
+        if image_data[:4] == b'RIFF' and image_data[8:12] == b'WEBP':
+            return 'webp'
+        return 'jpg'
+
+    @staticmethod
     def _image_filename(element: object, image_url: str) -> str:
         label = element.get_text(strip=True) if getattr(element, "get_text", None) else ""
         filename = os.path.basename(unquote(urlsplit(image_url).path))
         return (label or filename or "dcinside.jpg")[:255]
+
+    @staticmethod
+    def _ensure_image_extension(filename: str, image_data: bytes) -> str:
+        """If the filename doesn't have a recognizable image extension, derive one from data."""
+        if '.' in filename:
+            ext = filename.rsplit('.', 1)[-1].lower()
+            if ext in ('jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'):
+                return filename
+        # No valid image extension — derive from magic bytes
+        correct_ext = ImageHandler._image_extension_from_data(image_data)
+        base = filename.rsplit('.', 1)[0] if '.' in filename else filename
+        return f"{base}.{correct_ext}"
 
     def download_images(self, url: object) -> list | None:
         """Download the first eligible image from a post.
@@ -305,6 +330,9 @@ class ImageHandler:
                 if self.has_seen_hash(content_hash):
                     logger.info(f"동일한 파일이 존재합니다. PASS: {filename}")
                     return []
+
+                # Fix filename for Discord embed — DCInside now sends .php link text
+                filename = self._ensure_image_extension(filename, image_data)
 
                 # 이미지 처리 (압축 포함)
                 discord_buffer, telegram_buffer, is_gif = self.prepare_image(image_data, filename)
