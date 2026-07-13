@@ -212,9 +212,9 @@ def create_app(store: MemoryGalleryStore | None = None) -> FastAPI:
     async def security_headers(request: object, call_next: object) -> object:
         resp = await call_next(request)
         # 클릭재킹/MIME 스니핑/과도한 리퍼러 유출 방지 + HTTPS 유지. 부작용 위험이
-        # 없는 헤더만 넣는다. CSP는 넣지 않음: 이 사이트는 AdSense/GA/Turnstile
-        # 스크립트를 쓰고 페이지 자체 로직도 인라인 <script>라, 제대로 안 맞춘 CSP는
-        # 광고 심사 중인 지금 애드센스나 사이트 기능 자체를 조용히 깨뜨릴 수 있다.
+        # 없는 헤더만 넣는다. CSP는 넣지 않음: 이 사이트는 GA/Turnstile 스크립트를
+        # 쓰고 페이지 자체 로직도 인라인 <script>라, 제대로 안 맞춘 CSP는 사이트
+        # 기능 자체를 조용히 깨뜨릴 수 있다.
         # 도입하려면 Content-Security-Policy-Report-Only로 먼저 위반 로그를 보고
         # 점진적으로 좁혀야 한다(현재 인프라로는 라이브 검증 불가).
         resp.headers["X-Content-Type-Options"] = "nosniff"
@@ -258,13 +258,6 @@ def create_app(store: MemoryGalleryStore | None = None) -> FastAPI:
     @app.get("/request", response_class=HTMLResponse)
     async def request_gallery() -> object:
         return _page("request.html")
-
-    @app.get("/ads.txt", response_class=PlainTextResponse)
-    async def ads_txt() -> object:
-        f = static_dir / "ads.txt"
-        if f.exists():
-            return PlainTextResponse(f.read_text(encoding="utf-8"))
-        return PlainTextResponse("", status_code=404)
 
     # 브라우저가 루트 경로로 직접 요청하는 파비콘들. 내용이 안 바뀌므로 캐시 헤더 부여.
     for _fname, _mime in (
