@@ -5,6 +5,7 @@ import io
 import logging
 import math
 import os
+import warnings
 from math import ceil
 from urllib.parse import unquote, urljoin, urlsplit
 
@@ -32,9 +33,18 @@ class ImageHandler:
         self.session = requests.Session()
         self.session.headers.update(HEADERS)
 
-    def is_duplicate(self, content_hash: object) -> object:
-        """이미 처리한 이미지 해시인지 확인하고 기록한다. 이미 봤으면 True."""
+    def _is_duplicate(self, content_hash: object) -> bool:
         return self._seen_hashes.add_if_absent(content_hash)
+
+    def is_duplicate(self, content_hash: object) -> bool:
+        """Check and record a hash using the deprecated combined operation."""
+        warnings.warn(
+            "is_duplicate() is deprecated; use has_seen_hash() and "
+            "mark_hash_sent() so hashes are recorded only after delivery",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self._is_duplicate(content_hash)
 
     def has_seen_hash(self, content_hash: object) -> bool:
         return content_hash in self._seen_hashes
@@ -62,10 +72,15 @@ class ImageHandler:
             step = max(1, ceil(frame_count / MAX_GIF_FRAMES))
             frames = []
             durations = []
-            for frame_index in range(0, frame_count, step):
+            for frame_index in range(frame_count):
                 img.seek(frame_index)
-                frames.append(img.copy())
-                durations.append(img.info.get("duration", 100) * step)
+                if frame_index % step == 0:
+                    frames.append(img.copy())
+                    durations.append(0)
+                # Multiplying a sampled frame's duration by ``step`` assumes
+                # uniform timing and skews variable-duration animations. Sum
+                # each skipped frame's duration into its sampled frame instead.
+                durations[-1] += img.info.get("duration", 100)
 
             # 2단계: 크기 조절 (비율 유지)
             # 파일 크기는 대략 면적(scale^2)에 비례하므로 sqrt(목표/원본)을 시작점으로 추정
@@ -115,6 +130,8 @@ class ImageHandler:
             if img.mode in ('RGBA', 'P'):
                 img = img.convert('RGB')
 
+            # Cap web-delivery JPEGs at 95: quality 100 greatly increases size
+            # while providing little visible benefit, even when it would fit.
             low, high = 20, 95
             best_output = None
             best_quality = None
@@ -243,8 +260,13 @@ class ImageHandler:
         filename = os.path.basename(unquote(urlsplit(image_url).path))
         return (label or filename or "dcinside.jpg")[:255]
 
-    def download_images(self, url: object) -> object:
-        """원본 첨부 이미지를 우선하고 본문 이미지로 폴백한다."""
+    def download_images(self, url: object) -> list | None:
+        """Download the first eligible image from a post.
+
+        Returns ``None`` when no image can be downloaded or processing fails,
+        ``[]`` when the image hash has already been seen, and a one-item list
+        containing the processed image buffers and metadata on success.
+        """
         try:
             headers = {'Referer': url}
             res = self.session.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
